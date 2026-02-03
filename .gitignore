@@ -1,0 +1,51 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# Rust/Cargo
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Tauri
+src-tauri/WixTools/
+
+# LaTeX compilation artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.pdf
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database files
+src-tauri/vitae.db

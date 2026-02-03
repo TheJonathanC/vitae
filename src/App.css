@@ -1,0 +1,263 @@
+.app {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Sidebar Styles */
+.sidebar {
+  width: 280px;
+  background-color: #252526;
+  border-right: 1px solid #3e3e42;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid #3e3e42;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-header h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: #cccccc;
+}
+
+.btn-new {
+  background-color: #0e639c;
+  padding: 8px 16px;
+  font-size: 0.85em;
+}
+
+.btn-new:hover {
+  background-color: #1177bb;
+}
+
+.document-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.document-item {
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: #2d2d30;
+  position: relative;
+  border: 1px solid transparent;
+}
+
+.document-item:hover {
+  background-color: #37373d;
+  border-color: #3e3e42;
+}
+
+.document-item.active {
+  background-color: #094771;
+  border-color: #007acc;
+}
+
+.document-title {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #cccccc;
+  font-size: 0.95em;
+}
+
+.document-meta {
+  font-size: 0.75em;
+  color: #858585;
+}
+
+.btn-delete {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  font-size: 0.9em;
+  background-color: transparent;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.document-item:hover .btn-delete {
+  opacity: 1;
+}
+
+.btn-delete:hover {
+  background-color: #c93636;
+}
+
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: #858585;
+  font-size: 0.9em;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.toolbar {
+  height: 60px;
+  background-color: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.toolbar h1 {
+  font-size: 1.3em;
+  font-weight: 600;
+  color: #cccccc;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-compile {
+  background-color: #16825d;
+  padding: 10px 24px;
+  font-weight: 500;
+}
+
+.btn-compile:hover {
+  background-color: #1a9870;
+}
+
+.btn-export {
+  background-color: #0e639c;
+  padding: 10px 24px;
+  font-weight: 500;
+}
+
+.btn-export:hover {
+  background-color: #1177bb;
+}
+
+.error-banner {
+  background-color: #5a1d1d;
+  border-left: 4px solid #f48771;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #f48771;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.error-banner button {
+  background: transparent;
+  border: none;
+  color: #f48771;
+  font-size: 1.5em;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Editor Container */
+.editor-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.editor-pane {
+  flex: 1;
+  border-right: 1px solid #3e3e42;
+  overflow: hidden;
+  background-color: #1e1e1e;
+}
+
+.monaco-wrapper {
+  height: 100%;
+  width: 100%;
+}
+
+.preview-pane {
+  flex: 1;
+  background-color: #1e1e1e;
+  overflow: hidden;
+}
+
+/* PDF Viewer */
+.pdf-viewer {
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-viewer iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: #2d2d30;
+}
+
+.pdf-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1e1e1e;
+}
+
+.placeholder-content {
+  text-align: center;
+  color: #858585;
+}
+
+.placeholder-content svg {
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+.placeholder-content p {
+  font-size: 0.95em;
+  max-width: 300px;
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4e4e4e;
+}
