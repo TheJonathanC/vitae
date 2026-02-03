@@ -34,15 +34,30 @@
       "active": true,
       "targets": "all",
       "identifier": "com.vitae.app",
+      "publisher": "Jonathan Correa",
       "icon": [
         "icons/icon.ico"
       ],
       "resources": [],
       "externalBin": [],
-      "copyright": "",
+      "copyright": "Copyright © 2026 Jonathan Correa",
       "category": "DeveloperTool",
       "shortDescription": "A native LaTeX editor",
-      "longDescription": "Vitae is a desktop LaTeX editor with live PDF preview, built with Tauri for native performance and offline-first capabilities."
+      "longDescription": "Vitae is a desktop LaTeX editor with live PDF preview, built with Tauri for native performance and offline-first capabilities.",
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": "",
+        "wix": {
+          "language": "en-US",
+          "banner": {
+            "path": "icons/banner.png"
+          },
+          "dialog": {
+            "path": "icons/dialog.png"
+          }
+        }
+      }
     },
     "security": {
       "csp": null
