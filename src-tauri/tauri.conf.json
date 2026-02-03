@@ -50,12 +50,8 @@
         "timestampUrl": "",
         "wix": {
           "language": "en-US",
-          "banner": {
-            "path": "icons/banner.png"
-          },
-          "dialog": {
-            "path": "icons/dialog.png"
-          }
+          "bannerPath": "icons/banner.png",
+          "dialogImagePath": "icons/dialog.png"
         }
       }
     },
