@@ -261,3 +261,133 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #4e4e4e;
 }
+
+/* Setup Guide Styles */
+.setup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.setup-modal {
+  background-color: #2d2d30;
+  border-radius: 8px;
+  border: 1px solid #3e3e42;
+  width: 90%;
+  max-width: 700px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.setup-header {
+  padding: 24px 28px;
+  border-bottom: 1px solid #3e3e42;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.setup-header h2 {
+  font-size: 1.4em;
+  font-weight: 600;
+  color: #cccccc;
+  margin: 0;
+}
+
+.setup-progress {
+  font-size: 0.85em;
+  color: #858585;
+  background-color: #1e1e1e;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.setup-content {
+  flex: 1;
+  padding: 28px;
+  overflow-y: auto;
+  color: #cccccc;
+  line-height: 1.6;
+}
+
+.setup-content h3 {
+  margin-top: 0;
+}
+
+.setup-content a {
+  color: #0e639c;
+  text-decoration: none;
+}
+
+.setup-content a:hover {
+  text-decoration: underline;
+}
+
+.setup-footer {
+  padding: 20px 28px;
+  border-top: 1px solid #3e3e42;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.btn-primary {
+  background-color: #0e639c;
+  padding: 10px 24px;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  background-color: #1177bb;
+}
+
+.btn-secondary {
+  background-color: #3e3e42;
+  padding: 10px 24px;
+}
+
+.btn-secondary:hover {
+  background-color: #4e4e52;
+}
+
+.btn-setup {
+  background-color: #f59e0b;
+  padding: 10px 20px;
+  font-weight: 500;
+  color: #1e1e1e;
+}
+
+.btn-setup:hover {
+  background-color: #fbbf24;
+}

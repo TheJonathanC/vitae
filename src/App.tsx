@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import Editor from "./components/Editor";
 import Sidebar from "./components/Sidebar";
 import PDFViewer from "./components/PDFViewer";
+import SetupGuide from "./components/SetupGuide";
 import "./App.css";
 
 interface Document {
@@ -19,10 +20,28 @@ function App() {
   const [pdfPath, setPdfPath] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+  const [latexInstalled, setLatexInstalled] = useState(true);
 
   useEffect(() => {
+    checkLatexInstallation();
     loadDocuments();
   }, []);
+
+  const checkLatexInstallation = async () => {
+    try {
+      const installed = await invoke<boolean>("check_latex_installed");
+      setLatexInstalled(installed);
+      
+      // Show setup guide on first run if LaTeX not installed
+      const hasSeenSetup = localStorage.getItem("vitae_setup_complete");
+      if (!installed && !hasSeenSetup) {
+        setShowSetup(true);
+      }
+    } catch (err) {
+      console.error("Failed to check LaTeX installation:", err);
+    }
+  };
 
   const loadDocuments = async () => {
     try {
@@ -92,6 +111,12 @@ function App() {
   const compileLatex = async () => {
     if (!currentDocument) return;
 
+    // Check if LaTeX is installed before compiling
+    if (!latexInstalled) {
+      setShowSetup(true);
+      return;
+    }
+
     setIsCompiling(true);
     setError(null);
 
@@ -132,6 +157,16 @@ function App() {
 
   return (
     <div className="app">
+      {showSetup && (
+        <SetupGuide
+          onClose={() => {
+            setShowSetup(false);
+            localStorage.setItem("vitae_setup_complete", "true");
+            // Recheck LaTeX installation
+            checkLatexInstallation();
+          }}
+        />
+      )}
       <Sidebar
         documents={documents}
         currentDocument={currentDocument}
@@ -143,6 +178,15 @@ function App() {
         <div className="toolbar">
           <h1>{currentDocument?.title || "Vitae LaTeX Editor"}</h1>
           <div className="toolbar-actions">
+            {!latexInstalled && (
+              <button
+                onClick={() => setShowSetup(true)}
+                className="btn-setup"
+                title="LaTeX not detected"
+              >
+                ⚙️ Setup LaTeX
+              </button>
+            )}
             <button
               onClick={compileLatex}
               disabled={!currentDocument || isCompiling}

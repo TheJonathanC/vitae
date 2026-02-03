@@ -33,7 +33,13 @@
     "bundle": {
       "active": true,
       "targets": "all",
-      "identifier": "com.vitae.app"
+      "identifier": "com.vitae.app",
+      "resources": [],
+      "externalBin": [],
+      "copyright": "",
+      "category": "DeveloperTool",
+      "shortDescription": "A native LaTeX editor",
+      "longDescription": "Vitae is a desktop LaTeX editor with live PDF preview, built with Tauri for native performance and offline-first capabilities."
     },
     "security": {
       "csp": null
@@ -42,7 +48,7 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "Vitae - LaTeX Editor",
+        "title": "Vitae",
         "width": 1400,
         "height": 900,
         "minWidth": 800,

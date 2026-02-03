@@ -127,6 +127,18 @@ fn export_pdf(app: tauri::AppHandle, id: String, destination: String) -> Result<
     Ok(())
 }
 
+#[tauri::command]
+fn check_latex_installed() -> Result<bool, String> {
+    // Try to run pdflatex --version
+    match Command::new("pdflatex")
+        .arg("--version")
+        .output()
+    {
+        Ok(output) => Ok(output.status.success()),
+        Err(_) => Ok(false), // Command not found
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -150,7 +162,8 @@ fn main() {
             update_document,
             delete_document,
             compile_latex,
-            export_pdf
+            export_pdf,
+            check_latex_installed
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
