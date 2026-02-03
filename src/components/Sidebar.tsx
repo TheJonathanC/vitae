@@ -12,6 +12,8 @@ interface SidebarProps {
   onSelectDocument: (id: string) => void;
   onCreateDocument: () => void;
   onDeleteDocument: (id: string) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 function Sidebar({
@@ -20,45 +22,59 @@ function Sidebar({
   onSelectDocument,
   onCreateDocument,
   onDeleteDocument,
+  collapsed,
+  onToggleCollapse,
 }: SidebarProps) {
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <h2>Documents</h2>
-        <button onClick={onCreateDocument} className="btn-new">
-          + New
-        </button>
-      </div>
-      <div className="document-list">
-        {documents.map((doc) => (
-          <div
-            key={doc.id}
-            className={`document-item ${
-              currentDocument?.id === doc.id ? "active" : ""
-            }`}
-            onClick={() => onSelectDocument(doc.id)}
-          >
-            <div className="document-title">{doc.title}</div>
-            <div className="document-meta">
-              {new Date(doc.updated_at).toLocaleDateString()}
-            </div>
-            <button
-              className="btn-delete"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteDocument(doc.id);
-              }}
-            >
-              🗑️
+    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      {!collapsed && (
+        <>
+          <div className="sidebar-header">
+            <button className="sidebar-toggle" onClick={onToggleCollapse}>
+              ◀
+            </button>
+            <h2>Documents</h2>
+            <button onClick={onCreateDocument} className="btn-new">
+              + New
             </button>
           </div>
-        ))}
-        {documents.length === 0 && (
-          <div className="empty-state">
-            No documents yet. Create your first document!
+          <div className="document-list">
+            {documents.map((doc) => (
+              <div
+                key={doc.id}
+                className={`document-item ${
+                  currentDocument?.id === doc.id ? "active" : ""
+                }`}
+                onClick={() => onSelectDocument(doc.id)}
+              >
+                <div className="document-title">{doc.title}</div>
+                <div className="document-meta">
+                  {new Date(doc.updated_at).toLocaleDateString()}
+                </div>
+                <button
+                  className="btn-delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteDocument(doc.id);
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+            {documents.length === 0 && (
+              <div className="empty-state">
+                No documents yet. Create your first document!
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+      {collapsed && (
+        <button className="sidebar-toggle-collapsed" onClick={onToggleCollapse}>
+          ▶
+        </button>
+      )}
     </div>
   );
 }

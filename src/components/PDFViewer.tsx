@@ -13,8 +13,11 @@ function PDFViewer({ pdfPath }: PDFViewerProps) {
     const loadPdf = async () => {
       if (pdfPath) {
         try {
+          // Extract path without cache-busting query parameter if present
+          const cleanPath = typeof pdfPath === 'string' ? pdfPath.split('?')[0] : pdfPath;
+          
           // Read the PDF file as binary
-          const pdfData = await readBinaryFile(pdfPath);
+          const pdfData = await readBinaryFile(cleanPath);
           // Convert to base64
           const base64 = btoa(
             new Uint8Array(pdfData).reduce(
@@ -22,7 +25,7 @@ function PDFViewer({ pdfPath }: PDFViewerProps) {
               ""
             )
           );
-          // Create data URL
+          // Create data URL with cache busting
           const dataUrl = `data:application/pdf;base64,${base64}`;
           setPdfUrl(dataUrl);
           setError(null);

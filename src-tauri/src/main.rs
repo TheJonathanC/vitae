@@ -6,6 +6,21 @@ mod db;
 use db::{init_database, Document};
 use std::fs;
 use std::process::Command;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CompilationResult {
+    success: bool,
+    pdf_path: Option<String>,
+    errors: Vec<LatexError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LatexError {
+    line: Option<u32>,
+    message: String,
+    severity: String, // "error" or "warning"
+}
 
 #[tauri::command]
 fn get_all_documents(app: tauri::AppHandle) -> Result<Vec<Document>, String> {
@@ -63,7 +78,7 @@ fn delete_document(app: tauri::AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<String, String> {
+fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<CompilationResult, String> {
     // Get temp directory for compilation
     let temp_dir = app
         .path_resolver()
@@ -76,35 +91,110 @@ fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<S
     let tex_file = temp_dir.join(format!("{}.tex", id));
     let pdf_file = temp_dir.join(format!("{}.pdf", id));
     
+    // Delete old PDF and auxiliary files to ensure fresh compilation
+    let _ = fs::remove_file(&pdf_file);
+    let _ = fs::remove_file(temp_dir.join(format!("{}.aux", id)));
+    let _ = fs::remove_file(temp_dir.join(format!("{}.log", id)));
+    let _ = fs::remove_file(temp_dir.join(format!("{}.out", id)));
+    
     // Write LaTeX content to file
     fs::write(&tex_file, content).map_err(|e| format!("Failed to write tex file: {}", e))?;
     
     // Run pdflatex
     let output = Command::new("pdflatex")
         .arg("-interaction=nonstopmode")
+        .arg("-file-line-error")
         .arg("-output-directory")
         .arg(&temp_dir)
         .arg(&tex_file)
         .output()
         .map_err(|e| format!("Failed to run pdflatex: {}. Make sure pdflatex is installed and in PATH.", e))?;
     
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(format!("LaTeX compilation failed:\n{}\n{}", stdout, stderr));
-    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let errors = parse_latex_errors(&stdout);
     
     // Check if PDF was created
     if !pdf_file.exists() {
-        return Err("PDF file was not generated".to_string());
+        return Ok(CompilationResult {
+            success: false,
+            pdf_path: None,
+            errors: if errors.is_empty() {
+                vec![LatexError {
+                    line: None,
+                    message: "PDF file was not generated".to_string(),
+                    severity: "error".to_string(),
+                }]
+            } else {
+                errors
+            },
+        });
     }
     
-    // Return the path to the PDF
-    Ok(pdf_file
+    // PDF exists - check for errors
+    let has_errors = errors.iter().any(|e| e.severity == "error");
+    
+    let pdf_path = pdf_file
         .to_str()
         .ok_or("Invalid PDF path")?
         .to_string()
-        .replace("\\", "/"))
+        .replace("\\", "/");
+    
+    // Return the path to the PDF
+    Ok(CompilationResult {
+        success: !has_errors,
+        pdf_path: Some(pdf_path),
+        errors,
+    })
+}
+
+fn parse_latex_errors(output: &str) -> Vec<LatexError> {
+    let mut errors = Vec::new();
+    
+    for line in output.lines() {
+        // Parse errors with format: ./file.tex:123: Error message
+        if line.contains(":") {
+            let parts: Vec<&str> = line.splitn(3, ':').collect();
+            if parts.len() >= 3 {
+                // Try to parse line number
+                if let Ok(line_num) = parts[1].trim().parse::<u32>() {
+                    let message = parts[2].trim().to_string();
+                    
+                    // Determine severity
+                    let severity = if message.to_lowercase().contains("error") || line.contains("!") {
+                        "error"
+                    } else if message.to_lowercase().contains("warning") {
+                        "warning"
+                    } else {
+                        continue; // Skip non-error/warning lines
+                    };
+                    
+                    errors.push(LatexError {
+                        line: Some(line_num),
+                        message,
+                        severity: severity.to_string(),
+                    });
+                    continue;
+                }
+            }
+        }
+        
+        // Parse errors without line numbers
+        if line.starts_with("! ") {
+            errors.push(LatexError {
+                line: None,
+                message: line[2..].trim().to_string(),
+                severity: "error".to_string(),
+            });
+        } else if line.to_lowercase().contains("latex warning") {
+            errors.push(LatexError {
+                line: None,
+                message: line.trim().to_string(),
+                severity: "warning".to_string(),
+            });
+        }
+    }
+    
+    errors
 }
 
 #[tauri::command]

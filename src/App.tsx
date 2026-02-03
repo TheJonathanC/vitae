@@ -14,6 +14,18 @@ interface Document {
   updated_at: string;
 }
 
+interface LatexError {
+  line: number | null;
+  message: string;
+  severity: "error" | "warning";
+}
+
+interface CompilationResult {
+  success: boolean;
+  pdf_path?: string;
+  errors: LatexError[];
+}
+
 function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentDocument, setCurrentDocument] = useState<Document | null>(null);
@@ -22,11 +34,27 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [latexInstalled, setLatexInstalled] = useState(true);
+  const [latexErrors, setLatexErrors] = useState<LatexError[]>([]);
+  const [autoCompile, setAutoCompile] = useState(false);
+  const [compilationLog, setCompilationLog] = useState<string>("");
+  const [showLog, setShowLog] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     checkLatexInstallation();
     loadDocuments();
   }, []);
+
+  // Auto-compile with debounce
+  useEffect(() => {
+    if (!autoCompile || !currentDocument) return;
+
+    const timer = setTimeout(() => {
+      compileLatex();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [currentDocument?.content, autoCompile]);
 
   const checkLatexInstallation = async () => {
     try {
@@ -117,17 +145,79 @@ function App() {
       return;
     }
 
+    // Warn for large documents
+    const charCount = currentDocument.content.length;
+    if (charCount > 10000 && !autoCompile) {
+      const proceed = confirm(
+        `This document has ${charCount.toLocaleString()} characters. Compilation may take some time. Continue?`
+      );
+      if (!proceed) return;
+    }
+
     setIsCompiling(true);
     setError(null);
+    setCompilationLog("Starting compilation...\n");
+    
+    // Clear PDF to force reload
+    setPdfPath(null);
 
     try {
-      const path = await invoke<string>("compile_latex", {
+      const result = await invoke<CompilationResult>("compile_latex", {
         id: currentDocument.id,
         content: currentDocument.content,
       });
-      setPdfPath(path);
+      
+      setLatexErrors(result.errors);
+      
+      // Build compilation log
+      const errors = result.errors.filter(e => e.severity === "error");
+      const warnings = result.errors.filter(e => e.severity === "warning");
+      
+      let log = "Compilation completed\n\n";
+      
+      if (errors.length > 0) {
+        log += `=== ERRORS (${errors.length}) ===\n`;
+        errors.forEach(e => {
+          log += e.line ? `Line ${e.line}: ${e.message}\n` : `${e.message}\n`;
+        });
+        log += "\n";
+      }
+      
+      if (warnings.length > 0) {
+        log += `=== WARNINGS (${warnings.length}) ===\n`;
+        warnings.forEach(w => {
+          log += w.line ? `Line ${w.line}: ${w.message}\n` : `${w.message}\n`;
+        });
+        log += "\n";
+      }
+      
+      if (result.success) {
+        log += `✓ PDF generated successfully at ${result.pdf_path}`;
+      } else {
+        log += "✗ Compilation failed";
+      }
+      
+      setCompilationLog(log);
+      
+      if (result.success && result.pdf_path) {
+        // Add timestamp to force reload
+        setPdfPath(`${result.pdf_path}?t=${Date.now()}`);
+        
+        // Show warnings if any
+        if (warnings.length > 0) {
+          setError(`Compiled with ${warnings.length} warning(s). Click "View Log" for details.`);
+        }
+      } else {
+        const errorMsgs = errors
+          .map(e => e.line ? `Line ${e.line}: ${e.message}` : e.message)
+          .join("\n");
+        setError(`Compilation failed:\n${errorMsgs || "Unknown error"}`);
+      }
     } catch (err) {
-      setError(`Compilation error: ${err}`);
+      const errorMsg = `Compilation error: ${err}`;
+      setError(errorMsg);
+      setCompilationLog(`ERROR\n${errorMsg}`);
+      setLatexErrors([]);
     } finally {
       setIsCompiling(false);
     }
@@ -173,6 +263,8 @@ function App() {
         onSelectDocument={selectDocument}
         onCreateDocument={createNewDocument}
         onDeleteDocument={deleteDocument}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       <div className="main-content">
         <div className="toolbar">
@@ -188,11 +280,27 @@ function App() {
               </button>
             )}
             <button
+              onClick={() => setAutoCompile(!autoCompile)}
+              className={`btn-auto-compile ${autoCompile ? "active" : ""}`}
+              disabled={!currentDocument}
+              title="Auto-compile on change (2s delay)"
+            >
+              {autoCompile ? "🔄 Auto" : "⏸️ Auto"}
+            </button>
+            <button
               onClick={compileLatex}
               disabled={!currentDocument || isCompiling}
               className="btn-compile"
             >
               {isCompiling ? "Compiling..." : "Compile"}
+            </button>
+            <button
+              onClick={() => setShowLog(!showLog)}
+              disabled={!compilationLog}
+              className="btn-log"
+              title="View compilation log"
+            >
+              {showLog ? "Hide Log" : "View Log"}
             </button>
             <button
               onClick={exportPDF}
@@ -214,12 +322,22 @@ function App() {
             <Editor
               content={currentDocument?.content || ""}
               onChange={updateContent}
+              errors={latexErrors}
             />
           </div>
           <div className="preview-pane">
             <PDFViewer pdfPath={pdfPath} />
           </div>
         </div>
+        {showLog && compilationLog && (
+          <div className="compilation-log">
+            <div className="log-header">
+              <h3>Compilation Log</h3>
+              <button onClick={() => setShowLog(false)}>×</button>
+            </div>
+            <pre>{compilationLog}</pre>
+          </div>
+        )}
       </div>
     </div>
   );
