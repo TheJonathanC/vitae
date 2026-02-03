@@ -34,6 +34,9 @@
       "active": true,
       "targets": "all",
       "identifier": "com.vitae.app",
+      "icon": [
+        "icons/icon.ico"
+      ],
       "resources": [],
       "externalBin": [],
       "copyright": "",

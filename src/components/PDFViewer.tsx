@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
 import { readBinaryFile } from "@tauri-apps/api/fs";
 
 interface PDFViewerProps {
