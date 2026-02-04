@@ -528,3 +528,104 @@
 .btn-setup:hover {
   background-color: #fbbf24;
 }
+
+/* Update Banner */
+.update-banner {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.update-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.update-icon {
+  font-size: 1.5em;
+}
+
+.update-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.update-text strong {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+
+.update-text span {
+  font-size: 0.9em;
+  opacity: 0.95;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-update {
+  flex: 1;
+  background-color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-update:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-update:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-update-later {
+  background-color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-update-later:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn-update-later:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

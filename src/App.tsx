@@ -4,6 +4,7 @@ import Editor from "./components/Editor";
 import Sidebar from "./components/Sidebar";
 import PDFViewer from "./components/PDFViewer";
 import SetupGuide from "./components/SetupGuide";
+import UpdateChecker from "./components/UpdateChecker";
 import "./App.css";
 
 interface Document {
@@ -247,6 +248,7 @@ function App() {
 
   return (
     <div className="app">
+      <UpdateChecker />
       {showSetup && (
         <SetupGuide
           onClose={() => {

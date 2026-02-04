@@ -30,6 +30,14 @@
         "assetScope": ["$APPDATA/**"]
       }
     },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/TheJonathanC/vitae/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4OTVBQzExNkVCMjQwQTIKUldTaVFMSnVFYXlWT0F2blYxUnJlaVlDR3dHQXI1Z0NWY1Y1dytBdTR6K2JSd2VOa2FmWXJ4bk8K"
+    },
     "bundle": {
       "active": true,
       "targets": "all",
