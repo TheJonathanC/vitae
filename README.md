@@ -72,12 +72,35 @@ npm install
 npm run tauri dev
 ```
 
-4. **Build for production**
+4. **Run automated tests**
+```bash
+# Frontend component tests (Vitest)
+npm test
+
+# Backend Rust unit tests
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+5. **Build for production**
 ```bash
 npm run tauri build
 ```
 
 The built application will be in `src-tauri/target/release/`.
+
+## 🔄 Release Channels & CI/CD Pipeline
+
+Vitae includes a GitHub Actions CI/CD pipeline (`.github/workflows/ci-cd.yml`) and in-app release channel toggling:
+
+- **Beta Channel (`v1.1-beta`)**: Every commit to `main` is automatically tested (Rust + React unit tests) and published as a beta release (`v1.1.0-beta.<build>`) with rolling updater manifest `latest-beta.json`.
+- **Stable Channel (`v2.0+`)**: When tagged as a stable release (e.g. `v2.0.0`), the pipeline generates the `latest.json` manifest.
+- **In-App Channel Switcher**: Users can open **⚙️ Settings** to switch between Beta and Stable channels at any time and check for updates manually or on startup.
+
+### GitHub Repository Secrets for Auto-Updates:
+To enable automatic binary signing and generation of the updater signatures:
+- `TAURI_PRIVATE_KEY`: Your minisign private key matching the public key in `tauri.conf.json`.
+- `TAURI_KEY_PASSWORD`: Password for the private key (if set).
+- `GITHUB_TOKEN`: Provided automatically by GitHub Actions.
 
 ## 📖 Usage
 

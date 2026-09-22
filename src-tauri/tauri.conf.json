@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "Vitae",
-    "version": "0.1.0"
+    "version": "1.1.0-beta.1"
   },
   "tauri": {
     "allowlist": {
@@ -33,9 +33,9 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/TheJonathanC/vitae/releases/latest/download/latest.json"
+        "https://github.com/TheJonathanC/vitae/releases/download/latest-beta/latest-beta.json"
       ],
-      "dialog": true,
+      "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4OTVBQzExNkVCMjQwQTIKUldTaVFMSnVFYXlWT0F2blYxUnJlaVlDR3dHQXI1Z0NWY1Y1dytBdTR6K2JSd2VOa2FmWXJ4bk8K"
     },
     "bundle": {
@@ -64,7 +64,7 @@
       }
     },
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost blob: data:; font-src 'self' data:; connect-src 'self' ipc: tauri: https://github.com https://*.githubusercontent.com; frame-src 'self' asset: https://asset.localhost blob:; worker-src 'self' blob:;"
     },
     "windows": [
       {

@@ -1,10 +1,4 @@
-interface Document {
-  id: string;
-  title: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-}
+import { Document } from "../types";
 
 interface SidebarProps {
   documents: Document[];
@@ -53,6 +47,7 @@ function Sidebar({
                 </div>
                 <button
                   className="btn-delete"
+                  title="Delete document"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeleteDocument(doc.id);

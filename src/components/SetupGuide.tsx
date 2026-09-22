@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { open } from "@tauri-apps/api/shell";
 
 interface SetupGuideProps {
   onClose: () => void;
@@ -7,9 +8,18 @@ interface SetupGuideProps {
 function SetupGuide({ onClose }: SetupGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
 
-  const isWindows = navigator.platform.toLowerCase().includes("win");
-  const isMac = navigator.platform.toLowerCase().includes("mac");
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isWindows = userAgent.includes("win");
+  const isMac = userAgent.includes("mac");
   const isLinux = !isWindows && !isMac;
+
+  const handleOpenUrl = async (url: string) => {
+    try {
+      await open(url);
+    } catch (err) {
+      console.error("Failed to open URL in browser:", err);
+    }
+  };
 
   const steps = [
     {
@@ -46,7 +56,7 @@ function SetupGuide({ onClose }: SetupGuideProps) {
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
-                      window.open("https://miktex.org/download");
+                      handleOpenUrl("https://miktex.org/download");
                     }}
                     style={{ color: "#0e639c", textDecoration: "underline" }}
                   >
@@ -87,7 +97,7 @@ function SetupGuide({ onClose }: SetupGuideProps) {
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
-                      window.open("https://www.tug.org/mactex/");
+                      handleOpenUrl("https://www.tug.org/mactex/");
                     }}
                     style={{ color: "#0e639c", textDecoration: "underline" }}
                   >

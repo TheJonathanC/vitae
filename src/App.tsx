@@ -1,31 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import Editor from "./components/Editor";
 import Sidebar from "./components/Sidebar";
 import PDFViewer from "./components/PDFViewer";
 import SetupGuide from "./components/SetupGuide";
 import UpdateChecker from "./components/UpdateChecker";
+import SettingsModal from "./components/SettingsModal";
+import { Document, LatexError, CompilationResult } from "./types";
 import "./App.css";
-
-interface Document {
-  id: string;
-  title: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface LatexError {
-  line: number | null;
-  message: string;
-  severity: "error" | "warning";
-}
-
-interface CompilationResult {
-  success: boolean;
-  pdf_path?: string;
-  errors: LatexError[];
-}
 
 function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -40,115 +22,90 @@ function App() {
   const [compilationLog, setCompilationLog] = useState<string>("");
   const [showLog, setShowLog] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [updateChannel, setUpdateChannel] = useState<string>(() => {
+    return localStorage.getItem("vitae_channel") || "beta";
+  });
+
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{ id: string; content: string } | null>(null);
+
+  const currentDocRef = useRef<Document | null>(currentDocument);
+  currentDocRef.current = currentDocument;
+
+  const autoCompileRef = useRef(autoCompile);
+  autoCompileRef.current = autoCompile;
+
+  const latexInstalledRef = useRef(latexInstalled);
+  latexInstalledRef.current = latexInstalled;
+
+  const flushSave = async (): Promise<{ id: string; content: string } | null> => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    if (pendingSaveRef.current) {
+      const { id, content } = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      try {
+        await invoke("update_document", { id, content });
+        const now = new Date().toISOString();
+        if (currentDocRef.current && currentDocRef.current.id === id) {
+          currentDocRef.current = { ...currentDocRef.current, content, updated_at: now };
+        }
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === id ? { ...d, content, updated_at: now } : d))
+        );
+        setCurrentDocument((curr) =>
+          curr && curr.id === id ? { ...curr, content, updated_at: now } : curr
+        );
+        return { id, content };
+      } catch (err) {
+        setError(`Failed to save document: ${err}`);
+      }
+    }
+    return null;
+  };
 
   useEffect(() => {
     checkLatexInstallation();
     loadDocuments();
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      if (pendingSaveRef.current) {
+        const { id, content } = pendingSaveRef.current;
+        invoke("update_document", { id, content }).catch(console.error);
+      }
+    };
   }, []);
 
-  // Auto-compile with debounce
-  useEffect(() => {
-    if (!autoCompile || !currentDocument) return;
+  const compileLatex = useCallback(async () => {
+    const doc = currentDocRef.current;
+    if (!doc) return;
 
-    const timer = setTimeout(() => {
-      compileLatex();
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [currentDocument?.content, autoCompile]);
-
-  const checkLatexInstallation = async () => {
-    try {
-      const installed = await invoke<boolean>("check_latex_installed");
-      setLatexInstalled(installed);
-      
-      // Show setup guide on first run if LaTeX not installed
-      const hasSeenSetup = localStorage.getItem("vitae_setup_complete");
-      if (!installed && !hasSeenSetup) {
-        setShowSetup(true);
-      }
-    } catch (err) {
-      console.error("Failed to check LaTeX installation:", err);
+    let contentToCompile = doc.content;
+    if (pendingSaveRef.current && pendingSaveRef.current.id === doc.id) {
+      contentToCompile = pendingSaveRef.current.content;
     }
-  };
 
-  const loadDocuments = async () => {
-    try {
-      const docs = await invoke<Document[]>("get_all_documents");
-      setDocuments(docs);
-      if (docs.length > 0 && !currentDocument) {
-        setCurrentDocument(docs[0]);
-      }
-    } catch (err) {
-      setError(`Failed to load documents: ${err}`);
+    const saved = await flushSave();
+    if (saved && saved.id === doc.id) {
+      contentToCompile = saved.content;
     }
-  };
-
-  const createNewDocument = async () => {
-    const title = prompt("Enter document title:");
-    if (!title) return;
-
-    try {
-      const newDoc = await invoke<Document>("create_document", { title });
-      setDocuments([newDoc, ...documents]);
-      setCurrentDocument(newDoc);
-      setPdfPath(null);
-    } catch (err) {
-      setError(`Failed to create document: ${err}`);
-    }
-  };
-
-  const selectDocument = async (id: string) => {
-    try {
-      const doc = await invoke<Document>("get_document", { id });
-      setCurrentDocument(doc);
-      setPdfPath(null);
-    } catch (err) {
-      setError(`Failed to load document: ${err}`);
-    }
-  };
-
-  const updateContent = async (content: string) => {
-    if (!currentDocument) return;
-
-    try {
-      await invoke("update_document", {
-        id: currentDocument.id,
-        content,
-      });
-      setCurrentDocument({ ...currentDocument, content });
-    } catch (err) {
-      setError(`Failed to save document: ${err}`);
-    }
-  };
-
-  const deleteDocument = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this document?")) return;
-
-    try {
-      await invoke("delete_document", { id });
-      setDocuments(documents.filter((d) => d.id !== id));
-      if (currentDocument?.id === id) {
-        setCurrentDocument(documents[0] || null);
-        setPdfPath(null);
-      }
-    } catch (err) {
-      setError(`Failed to delete document: ${err}`);
-    }
-  };
-
-  const compileLatex = async () => {
-    if (!currentDocument) return;
 
     // Check if LaTeX is installed before compiling
-    if (!latexInstalled) {
+    if (!latexInstalledRef.current) {
       setShowSetup(true);
       return;
     }
 
     // Warn for large documents
-    const charCount = currentDocument.content.length;
-    if (charCount > 10000 && !autoCompile) {
+    const charCount = contentToCompile.length;
+    if (charCount > 10000 && !autoCompileRef.current) {
       const proceed = confirm(
         `This document has ${charCount.toLocaleString()} characters. Compilation may take some time. Continue?`
       );
@@ -164,8 +121,8 @@ function App() {
 
     try {
       const result = await invoke<CompilationResult>("compile_latex", {
-        id: currentDocument.id,
-        content: currentDocument.content,
+        id: doc.id,
+        content: contentToCompile,
       });
       
       setLatexErrors(result.errors);
@@ -201,8 +158,7 @@ function App() {
       setCompilationLog(log);
       
       if (result.success && result.pdf_path) {
-        // Add timestamp to force reload
-        setPdfPath(`${result.pdf_path}?t=${Date.now()}`);
+        setPdfPath(result.pdf_path);
         
         // Show warnings if any
         if (warnings.length > 0) {
@@ -221,6 +177,117 @@ function App() {
       setLatexErrors([]);
     } finally {
       setIsCompiling(false);
+    }
+  }, []);
+
+  // Auto-compile with debounce
+  useEffect(() => {
+    if (!autoCompile || !currentDocument) return;
+
+    const timer = setTimeout(() => {
+      compileLatex();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [currentDocument?.id, currentDocument?.content, autoCompile, compileLatex]);
+
+  const checkLatexInstallation = async () => {
+    try {
+      const installed = await invoke<boolean>("check_latex_installed");
+      setLatexInstalled(installed);
+      
+      // Show setup guide on first run if LaTeX not installed
+      const hasSeenSetup = localStorage.getItem("vitae_setup_complete");
+      if (!installed && !hasSeenSetup) {
+        setShowSetup(true);
+      }
+    } catch (err) {
+      console.error("Failed to check LaTeX installation:", err);
+    }
+  };
+
+  const loadDocuments = async () => {
+    try {
+      const docs = await invoke<Document[]>("get_all_documents");
+      setDocuments(docs);
+      if (docs.length > 0 && !currentDocument) {
+        setCurrentDocument(docs[0]);
+      }
+    } catch (err) {
+      setError(`Failed to load documents: ${err}`);
+    }
+  };
+
+  const createNewDocument = async () => {
+    const title = prompt("Enter document title:");
+    if (!title) return;
+
+    await flushSave();
+
+    try {
+      const newDoc = await invoke<Document>("create_document", { title });
+      setDocuments((prev) => [newDoc, ...prev]);
+      setCurrentDocument(newDoc);
+      setPdfPath(null);
+    } catch (err) {
+      setError(`Failed to create document: ${err}`);
+    }
+  };
+
+  const selectDocument = async (id: string) => {
+    if (currentDocument?.id === id) return;
+
+    await flushSave();
+
+    try {
+      const doc = await invoke<Document>("get_document", { id });
+      setCurrentDocument(doc);
+      setPdfPath(null);
+    } catch (err) {
+      setError(`Failed to load document: ${err}`);
+    }
+  };
+
+  const updateContent = (content: string) => {
+    if (!currentDocument) return;
+
+    // Immediately update in-memory state for lag-free typing
+    setCurrentDocument((prev) => (prev ? { ...prev, content } : null));
+
+    // Queue debounced save
+    pendingSaveRef.current = { id: currentDocument.id, content };
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      flushSave();
+    }, 500);
+  };
+
+  const deleteDocument = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+
+    if (pendingSaveRef.current?.id === id) {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      pendingSaveRef.current = null;
+    }
+
+    try {
+      await invoke("delete_document", { id });
+      setDocuments((prev) => {
+        const remaining = prev.filter((d) => d.id !== id);
+        if (currentDocRef.current?.id === id) {
+          setCurrentDocument(remaining[0] || null);
+          setPdfPath(null);
+        }
+        return remaining;
+      });
+    } catch (err) {
+      setError(`Failed to delete document: ${err}`);
     }
   };
 
@@ -248,7 +315,14 @@ function App() {
 
   return (
     <div className="app">
-      <UpdateChecker />
+      <UpdateChecker channel={updateChannel} />
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          currentChannel={updateChannel}
+          onChannelChange={(newChannel) => setUpdateChannel(newChannel)}
+        />
+      )}
       {showSetup && (
         <SetupGuide
           onClose={() => {
@@ -310,6 +384,13 @@ function App() {
               className="btn-export"
             >
               Export PDF
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="btn-settings"
+              title="Settings & Update Channel"
+            >
+              ⚙️ Settings
             </button>
           </div>
         </div>

@@ -1,12 +1,7 @@
 import { useEffect, useRef } from "react";
-import MonacoEditor, { OnMount } from "@monaco-editor/react";
+import MonacoEditor, { Monaco, OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-
-interface LatexError {
-  line: number | null;
-  message: string;
-  severity: string;
-}
+import { LatexError } from "../types";
 
 interface EditorProps {
   content: string;
@@ -16,7 +11,7 @@ interface EditorProps {
 
 function Editor({ content, onChange, errors = [] }: EditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<any>(null);
+  const monacoRef = useRef<Monaco | null>(null);
 
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {

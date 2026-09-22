@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { readBinaryFile } from "@tauri-apps/api/fs";
+import { convertFileSrc } from "@tauri-apps/api/tauri";
 
 interface PDFViewerProps {
   pdfPath: string | null;
@@ -10,37 +10,22 @@ function PDFViewer({ pdfPath }: PDFViewerProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadPdf = async () => {
-      if (pdfPath) {
-        try {
-          // Extract path without cache-busting query parameter if present
-          const cleanPath = typeof pdfPath === 'string' ? pdfPath.split('?')[0] : pdfPath;
-          
-          // Read the PDF file as binary
-          const pdfData = await readBinaryFile(cleanPath);
-          // Convert to base64
-          const base64 = btoa(
-            new Uint8Array(pdfData).reduce(
-              (data, byte) => data + String.fromCharCode(byte),
-              ""
-            )
-          );
-          // Create data URL with cache busting
-          const dataUrl = `data:application/pdf;base64,${base64}`;
-          setPdfUrl(dataUrl);
-          setError(null);
-        } catch (err) {
-          console.error("Failed to load PDF:", err);
-          setError(`Failed to load PDF: ${err}`);
-          setPdfUrl(null);
-        }
-      } else {
-        setPdfUrl(null);
-        setError(null);
-      }
-    };
+    if (!pdfPath) {
+      setPdfUrl(null);
+      setError(null);
+      return;
+    }
 
-    loadPdf();
+    try {
+      const cleanPath = typeof pdfPath === "string" ? pdfPath.trim().split("?")[0] : pdfPath;
+      const assetUrl = convertFileSrc(cleanPath);
+      setPdfUrl(`${assetUrl}?t=${Date.now()}`);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to load PDF:", err);
+      setError(`Failed to load PDF: ${err}`);
+      setPdfUrl(null);
+    }
   }, [pdfPath]);
 
   if (error) {

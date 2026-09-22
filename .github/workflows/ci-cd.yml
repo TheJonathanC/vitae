@@ -1,0 +1,275 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel (beta or stable)'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - beta
+          - stable
+      version:
+        description: 'Version string (optional, e.g. 2.0.0 or 1.1.0-beta.2)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Run Automated Tests
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Run Frontend unit tests (Vitest)
+        run: npm test
+
+      - name: Run Backend unit tests (Cargo)
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
+
+  build-and-release:
+    name: Build & Publish Release
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Determine Version & Channel
+        id: versioning
+        shell: pwsh
+        run: |
+          $isTag = "${{ github.ref }}".StartsWith("refs/tags/v")
+          $explicitChannel = "${{ inputs.channel }}"
+          $explicitVersion = "${{ inputs.version }}"
+          
+          # Default: until stable v2.0 is declared, all main builds are in the beta stream (v1.1-beta)
+          if ($isTag) {
+            $rawTag = "${{ github.ref_name }}"
+            $ver = $rawTag.TrimStart('v')
+            if ($rawTag.StartsWith("v2.") -and $rawTag -notmatch "beta") {
+              $channel = "stable"
+              $isPrerelease = $false
+            } else {
+              $channel = "beta"
+              $isPrerelease = $true
+            }
+            $tag = $rawTag
+          } elseif ($explicitChannel -eq "stable") {
+            $channel = "stable"
+            if ($explicitVersion -and $explicitVersion.Trim() -ne "") {
+              $ver = $explicitVersion.TrimStart('v')
+            } else {
+              $ver = "2.0.0"
+            }
+            $tag = "v$ver"
+            $isPrerelease = $false
+          } else {
+            # Continuous beta release on main commit or manual beta dispatch
+            $channel = "beta"
+            if ($explicitVersion -and $explicitVersion.Trim() -ne "") {
+              $ver = $explicitVersion.TrimStart('v')
+            } else {
+              $ver = "1.1.0-beta.${{ github.run_number }}"
+            }
+            $tag = "v$ver"
+            $isPrerelease = $true
+          }
+          
+          Write-Host "Computed Version: $ver"
+          Write-Host "Computed Tag: $tag"
+          Write-Host "Computed Channel: $channel"
+          Write-Host "Is Pre-release: $isPrerelease"
+          
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "channel=$channel" >> $env:GITHUB_OUTPUT
+          echo "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
+
+      - name: Update versions in configuration files
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.versioning.outputs.version }}"
+          $channel = "${{ steps.versioning.outputs.channel }}"
+          
+          # Update package.json
+          $pkg = Get-Content ./package.json -Raw | ConvertFrom-Json
+          $pkg.version = $ver
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content ./package.json
+          
+          # Update src-tauri/tauri.conf.json
+          $tauriConf = Get-Content ./src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tauriConf.package.version = $ver
+          if ($channel -eq "beta") {
+            $tauriConf.tauri.updater.endpoints = @("https://github.com/${{ github.repository }}/releases/download/latest-beta/latest-beta.json")
+          } else {
+            $tauriConf.tauri.updater.endpoints = @("https://github.com/${{ github.repository }}/releases/latest/download/latest.json")
+          }
+          $tauriConf | ConvertTo-Json -Depth 10 | Set-Content ./src-tauri/tauri.conf.json
+          
+          # Update Cargo.toml [package] version only (anchored to line start so dependencies are untouched)
+          $cargoContent = Get-Content ./src-tauri/Cargo.toml -Raw
+          $cargoContent = [regex]::new('(?m)^version\s*=\s*"[^"]+"').Replace($cargoContent, "version = `"$ver`"", 1)
+          $cargoContent | Set-Content ./src-tauri/Cargo.toml
+
+      - name: Build Tauri Application
+        shell: pwsh
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        run: |
+          npm run tauri build
+
+      - name: Prepare Release Artifacts & Updater Manifest
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.versioning.outputs.version }}"
+          $tag = "${{ steps.versioning.outputs.tag }}"
+          $channel = "${{ steps.versioning.outputs.channel }}"
+          
+          New-Item -ItemType Directory -Force -Path "./release-assets"
+          
+          # Copy MSI and Zip bundles
+          $msiDir = "./src-tauri/target/release/bundle/msi"
+          if (Test-Path $msiDir) {
+            Get-ChildItem -Path $msiDir -Filter "*.msi" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $msiDir -Filter "*.zip" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $msiDir -Filter "*.sig" | Copy-Item -Destination "./release-assets/"
+          }
+          
+          # Copy NSIS installer and Zip bundles
+          $nsisDir = "./src-tauri/target/release/bundle/nsis"
+          if (Test-Path $nsisDir) {
+            Get-ChildItem -Path $nsisDir -Filter "*.exe" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $nsisDir -Filter "*.zip" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $nsisDir -Filter "*.sig" | Copy-Item -Destination "./release-assets/"
+          }
+          
+          # Find zip and signature for updater manifest
+          $zipFile = Get-ChildItem -Path "./release-assets/" -Filter "*.zip" | Select-Object -First 1
+          $sigFile = Get-ChildItem -Path "./release-assets/" -Filter "*.sig" | Select-Object -First 1
+          
+          if ($zipFile -and $sigFile) {
+            $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
+            $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($zipFile.Name)"
+            
+            $manifest = @{
+              version = $ver
+              notes = "Automated release $ver ($channel channel). Commit: ${{ github.sha }}"
+              pub_date = $pubDate
+              platforms = @{
+                "windows-x86_64" = @{
+                  signature = $sigContent
+                  url = $downloadUrl
+                }
+              }
+            }
+            
+            $manifestJson = $manifest | ConvertTo-Json -Depth 10
+            
+            if ($channel -eq "beta") {
+              $manifestJson | Set-Content "./release-assets/latest-beta.json"
+              Write-Host "Generated latest-beta.json"
+            } else {
+              $manifestJson | Set-Content "./release-assets/latest.json"
+              # Also update beta manifest for stable releases so beta users receive stable updates too
+              $manifestJson | Set-Content "./release-assets/latest-beta.json"
+              Write-Host "Generated latest.json and latest-beta.json"
+            }
+          } else {
+            Write-Warning "No signed zip asset found. Updater manifest generation skipped (requires TAURI_PRIVATE_KEY secret)."
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.versioning.outputs.tag }}
+          name: Vitae ${{ steps.versioning.outputs.tag }}
+          prerelease: ${{ steps.versioning.outputs.is_prerelease }}
+          make_latest: ${{ steps.versioning.outputs.channel == 'stable' }}
+          generate_release_notes: true
+          files: ./release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare Rolling Beta Release Tag & Clear Stale Release
+        if: hashFiles('./release-assets/latest-beta.json') != ''
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag -f latest-beta ${{ github.sha }}
+          git push -f origin latest-beta
+          gh release delete latest-beta --yes --cleanup-tag=false 2>$null
+          $LASTEXITCODE = 0
+
+      - name: Update Rolling Beta Channel Release
+        if: hashFiles('./release-assets/latest-beta.json') != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-beta
+          target_commitish: ${{ github.sha }}
+          name: Vitae (Beta Channel - Rolling)
+          prerelease: true
+          make_latest: false
+          draft: false
+          overwrite_files: true
+          files: |
+            ./release-assets/latest-beta.json
+            ./release-assets/*.zip
+            ./release-assets/*.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
