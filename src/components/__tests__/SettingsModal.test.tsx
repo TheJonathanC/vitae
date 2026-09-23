@@ -11,6 +11,10 @@ vi.mock("@tauri-apps/api/process", () => ({
   relaunch: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/shell", () => ({
+  open: vi.fn(),
+}));
+
 describe("SettingsModal component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,6 +84,78 @@ describe("SettingsModal component", () => {
       ).toBeInTheDocument();
       expect(screen.getByText("Install 1.1.0-beta.2")).toBeInTheDocument();
     });
+  });
+
+  it("falls back to GitHub Releases when updater JSON is missing and shows available update", async () => {
+    (invoke as any).mockRejectedValueOnce("Could not fetch a valid release JSON from the remote.");
+
+    // Mock fetch for GitHub Releases API
+    const mockReleases = [
+      {
+        tag_name: "v1.1.0-beta.9",
+        published_at: "2026-09-23T00:00:00Z",
+        body: "New features",
+        prerelease: true,
+        assets: [
+          {
+            name: "Vitae_1.1.0-beta.9_x64-setup.exe",
+            browser_download_url: "https://github.com/TheJonathanC/vitae/releases/download/v1.1.0-beta.9/Vitae_1.1.0-beta.9_x64-setup.exe",
+          },
+        ],
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockReleases,
+      })
+    );
+
+    render(
+      <SettingsModal
+        onClose={vi.fn()}
+        currentChannel="beta"
+        onChannelChange={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Check for Updates Now"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Update v1.1.0-beta.9 is available on GitHub!/i)).toBeInTheDocument();
+      expect(screen.getByText("Download v1.1.0-beta.9")).toBeInTheDocument();
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it("shows friendly message when updater manifest is missing and GitHub API fails", async () => {
+    (invoke as any).mockRejectedValueOnce("Could not fetch a valid release JSON from the remote.");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValueOnce(new Error("Network offline"))
+    );
+
+    render(
+      <SettingsModal
+        onClose={vi.fn()}
+        currentChannel="beta"
+        onChannelChange={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Check for Updates Now"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/No updater manifest found for this channel. Check https:\/\/github.com\/TheJonathanC\/vitae\/releases for updates./i)
+      ).toBeInTheDocument();
+    });
+
+    vi.unstubAllGlobals();
   });
 
   it("calls onClose when 'Done' or '×' is clicked", () => {

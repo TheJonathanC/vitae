@@ -207,40 +207,53 @@ jobs:
             Get-ChildItem -Path $nsisDir -Filter "*.sig" | Copy-Item -Destination "./release-assets/"
           }
           
-          # Find zip and signature for updater manifest
+          # Find installer, zip and signature for updater manifest
+          $exeFile = Get-ChildItem -Path "./release-assets/" -Filter "*.exe" | Select-Object -First 1
+          $msiFile = Get-ChildItem -Path "./release-assets/" -Filter "*.msi" | Select-Object -First 1
           $zipFile = Get-ChildItem -Path "./release-assets/" -Filter "*.zip" | Select-Object -First 1
           $sigFile = Get-ChildItem -Path "./release-assets/" -Filter "*.sig" | Select-Object -First 1
+          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           
           if ($zipFile -and $sigFile) {
             $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
-            $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($zipFile.Name)"
-            
-            $manifest = @{
-              version = $ver
-              notes = "Automated release $ver ($channel channel). Commit: ${{ github.sha }}"
-              pub_date = $pubDate
-              platforms = @{
-                "windows-x86_64" = @{
-                  signature = $sigContent
-                  url = $downloadUrl
-                }
+            Write-Host "Creating signed updater manifest using $($zipFile.Name)"
+          } elseif ($exeFile) {
+            $sigContent = ""
+            $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($exeFile.Name)"
+            Write-Warning "No signed zip asset found. Creating fallback updater manifest pointing to installer $($exeFile.Name) (add TAURI_PRIVATE_KEY to repository secrets for signed auto-install)."
+          } elseif ($msiFile) {
+            $sigContent = ""
+            $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($msiFile.Name)"
+            Write-Warning "No signed zip asset found. Creating fallback updater manifest pointing to MSI $($msiFile.Name)."
+          } else {
+            $sigContent = ""
+            $downloadUrl = "https://github.com/${{ github.repository }}/releases/tag/$tag"
+            Write-Host "Creating generic updater manifest for tag $tag"
+          }
+          
+          $manifest = @{
+            version = $ver
+            notes = "Automated release $ver ($channel channel). Commit: ${{ github.sha }}"
+            pub_date = $pubDate
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sigContent
+                url = $downloadUrl
               }
             }
-            
-            $manifestJson = $manifest | ConvertTo-Json -Depth 10
-            
-            if ($channel -eq "beta") {
-              $manifestJson | Set-Content "./release-assets/latest-beta.json"
-              Write-Host "Generated latest-beta.json"
-            } else {
-              $manifestJson | Set-Content "./release-assets/latest.json"
-              # Also update beta manifest for stable releases so beta users receive stable updates too
-              $manifestJson | Set-Content "./release-assets/latest-beta.json"
-              Write-Host "Generated latest.json and latest-beta.json"
-            }
+          }
+          
+          $manifestJson = $manifest | ConvertTo-Json -Depth 10
+          
+          if ($channel -eq "beta") {
+            $manifestJson | Set-Content "./release-assets/latest-beta.json"
+            Write-Host "Generated latest-beta.json"
           } else {
-            Write-Warning "No signed zip asset found. Updater manifest generation skipped (requires TAURI_PRIVATE_KEY secret)."
+            $manifestJson | Set-Content "./release-assets/latest.json"
+            # Also update beta manifest for stable releases so beta users receive stable updates too
+            $manifestJson | Set-Content "./release-assets/latest-beta.json"
+            Write-Host "Generated latest.json and latest-beta.json"
           }
 
       - name: Publish GitHub Release
@@ -286,5 +299,7 @@ jobs:
             ./release-assets/latest-beta.json
             ./release-assets/*.zip
             ./release-assets/*.sig
+            ./release-assets/*.exe
+            ./release-assets/*.msi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

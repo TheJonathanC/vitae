@@ -408,6 +408,7 @@ struct UpdateCheckResponse {
     version: Option<String>,
     date: Option<String>,
     body: Option<String>,
+    download_url: Option<String>,
 }
 
 #[tauri::command]
@@ -419,7 +420,19 @@ async fn check_update_custom(
     let endpoint = get_update_endpoint(&channel);
     let urls = [endpoint.to_string()];
     let builder = tauri::updater::builder(app).endpoints(&urls);
-    let update = builder.check().await.map_err(|e| e.to_string())?;
+    let update = match builder.check().await {
+        Ok(u) => u,
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("Could not fetch a valid release JSON") {
+                return Err(format!(
+                    "Could not fetch release manifest from {}. (Manifest may not yet be published for this channel)",
+                    endpoint
+                ));
+            }
+            return Err(err_str);
+        }
+    };
     
     if update.is_update_available() {
         let resp = UpdateCheckResponse {
@@ -427,6 +440,7 @@ async fn check_update_custom(
             version: Some(update.latest_version().to_string()),
             date: update.date().map(|d| d.to_string()),
             body: update.body().map(|b| b.to_string()),
+            download_url: None,
         };
         if let Ok(mut guard) = state.0.lock() {
             *guard = Some(update);
@@ -441,6 +455,7 @@ async fn check_update_custom(
             version: None,
             date: None,
             body: None,
+            download_url: None,
         })
     }
 }

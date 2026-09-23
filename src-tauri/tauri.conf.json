@@ -68,7 +68,7 @@
       }
     },
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost blob: data:; font-src 'self' data:; connect-src 'self' ipc: tauri: https://github.com https://*.githubusercontent.com; frame-src 'self' asset: https://asset.localhost blob:; worker-src 'self' blob:;"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost blob: data:; font-src 'self' data:; connect-src 'self' ipc: tauri: https://github.com https://api.github.com https://*.githubusercontent.com; frame-src 'self' asset: https://asset.localhost blob:; worker-src 'self' blob:;"
     },
     "windows": [
       {

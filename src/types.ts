@@ -23,4 +23,5 @@ export interface UpdateCheckResponse {
   version: string | null;
   date: string | null;
   body: string | null;
+  download_url?: string | null;
 }

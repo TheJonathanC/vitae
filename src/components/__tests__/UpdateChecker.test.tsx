@@ -11,6 +11,10 @@ vi.mock("@tauri-apps/api/process", () => ({
   relaunch: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/shell", () => ({
+  open: vi.fn(),
+}));
+
 describe("UpdateChecker component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -159,5 +163,42 @@ describe("UpdateChecker component", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("update-banner")).not.toBeInTheDocument();
     });
+  });
+
+  it("falls back to GitHub Releases when check_update_custom fails and shows banner", async () => {
+    (invoke as any).mockRejectedValueOnce(new Error("Could not fetch a valid release JSON from the remote."));
+
+    const mockReleases = [
+      {
+        tag_name: "v1.1.0-beta.99",
+        published_at: "2026-09-23T00:00:00Z",
+        body: "Exciting new features",
+        prerelease: true,
+        assets: [
+          {
+            name: "Vitae_1.1.0-beta.99_x64-setup.exe",
+            browser_download_url: "https://github.com/TheJonathanC/vitae/releases/download/v1.1.0-beta.99/Vitae_1.1.0-beta.99_x64-setup.exe",
+          },
+        ],
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockReleases,
+      })
+    );
+
+    render(<UpdateChecker channel="beta" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("update-banner")).toBeInTheDocument();
+      expect(screen.getByText(/Version v1.1.0-beta.99 is available to download/i)).toBeInTheDocument();
+      expect(screen.getByText("Download")).toBeInTheDocument();
+    });
+
+    vi.unstubAllGlobals();
   });
 });

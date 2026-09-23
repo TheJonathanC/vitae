@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { relaunch } from "@tauri-apps/api/process";
+import { open } from "@tauri-apps/api/shell";
+import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
 
 interface UpdateCheckerProps {
@@ -37,11 +39,50 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
             setUpdateInfo(null);
           }
         })
-        .catch((error) => {
+        .catch(async (error) => {
           if (isCancelled) return;
-          console.log("Update check failed:", error);
-          setUpdateAvailable(false);
-          setUpdateInfo(null);
+          console.warn("Primary update check failed, attempting GitHub Releases fallback:", error);
+          
+          try {
+            const ghResponse = await fetch("https://api.github.com/repos/TheJonathanC/vitae/releases");
+            if (ghResponse.ok && !isCancelled) {
+              const releases = await ghResponse.json();
+              const targetRelease = releases.find((r: any) => {
+                if (channel === "beta") return true;
+                return !r.prerelease;
+              });
+
+              if (targetRelease) {
+                const rawTag = targetRelease.tag_name || "";
+                const remoteVersion = rawTag.replace(/^v/, "");
+                const localVersion = (packageInfo.version || "").replace(/^v/, "");
+
+                if (remoteVersion && remoteVersion !== localVersion) {
+                  const exeAsset = targetRelease.assets?.find((a: any) =>
+                    a.name.endsWith(".exe") || a.name.endsWith(".msi")
+                  );
+                  const downloadUrl = exeAsset?.browser_download_url || targetRelease.html_url;
+
+                  setUpdateAvailable(true);
+                  setUpdateInfo({
+                    should_update: true,
+                    version: rawTag,
+                    date: targetRelease.published_at,
+                    body: targetRelease.body || null,
+                    download_url: downloadUrl,
+                  });
+                  return;
+                }
+              }
+            }
+          } catch (ghErr) {
+            // Ignore fallback failure in background auto-check
+          }
+
+          if (!isCancelled) {
+            setUpdateAvailable(false);
+            setUpdateInfo(null);
+          }
         });
     }
 
@@ -53,13 +94,27 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
   const handleUpdate = async () => {
     if (!updateInfo) return;
 
+    if (updateInfo.download_url) {
+      try {
+        await open(updateInfo.download_url);
+        setUpdateAvailable(false);
+      } catch (err) {
+        console.error("Failed to open update URL:", err);
+      }
+      return;
+    }
+
     setDownloading(true);
     try {
       await invoke("install_update_custom", { channel: activeChannel });
       // Restart the app to apply the update
       await relaunch();
     } catch (error) {
-      alert(`Update failed: ${error}`);
+      try {
+        await open("https://github.com/TheJonathanC/vitae/releases");
+      } catch {
+        alert(`Update failed: ${error}`);
+      }
       setDownloading(false);
     }
   };
@@ -82,7 +137,11 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
               {activeChannel.toUpperCase()}
             </span>
           </div>
-          <span>Version {updateInfo.version} is ready to install.</span>
+          <span>
+            {updateInfo.download_url
+              ? `Version ${updateInfo.version} is available to download.`
+              : `Version ${updateInfo.version} is ready to install.`}
+          </span>
           {updateInfo.body && (
             <span className="update-notes-preview" title={updateInfo.body}>
               {updateInfo.body.length > 80
@@ -98,7 +157,11 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
           disabled={downloading}
           className="btn-update"
         >
-          {downloading ? "Installing..." : "Update Now"}
+          {downloading
+            ? "Installing..."
+            : updateInfo.download_url
+            ? "Download"
+            : "Update Now"}
         </button>
         <button
           onClick={() => setUpdateAvailable(false)}
