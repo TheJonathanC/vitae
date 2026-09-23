@@ -191,20 +191,13 @@ jobs:
           
           New-Item -ItemType Directory -Force -Path "./release-assets"
           
-          # Copy MSI and Zip bundles
-          $msiDir = "./src-tauri/target/release/bundle/msi"
-          if (Test-Path $msiDir) {
-            Get-ChildItem -Path $msiDir -Filter "*.msi" | Copy-Item -Destination "./release-assets/"
-            Get-ChildItem -Path $msiDir -Filter "*.zip" | Copy-Item -Destination "./release-assets/"
-            Get-ChildItem -Path $msiDir -Filter "*.sig" | Copy-Item -Destination "./release-assets/"
-          }
-          
-          # Copy NSIS installer and Zip bundles
-          $nsisDir = "./src-tauri/target/release/bundle/nsis"
-          if (Test-Path $nsisDir) {
-            Get-ChildItem -Path $nsisDir -Filter "*.exe" | Copy-Item -Destination "./release-assets/"
-            Get-ChildItem -Path $nsisDir -Filter "*.zip" | Copy-Item -Destination "./release-assets/"
-            Get-ChildItem -Path $nsisDir -Filter "*.sig" | Copy-Item -Destination "./release-assets/"
+          # Copy all installer, updater zip, and signature bundles recursively
+          $bundleDir = "./src-tauri/target/release/bundle"
+          if (Test-Path $bundleDir) {
+            Get-ChildItem -Path $bundleDir -Recurse -Filter "*.msi" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $bundleDir -Recurse -Filter "*.exe" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $bundleDir -Recurse -Filter "*.zip" | Copy-Item -Destination "./release-assets/"
+            Get-ChildItem -Path $bundleDir -Recurse -Filter "*.sig" | Copy-Item -Destination "./release-assets/"
           }
           
           # Find installer, zip and signature for updater manifest
