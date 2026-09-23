@@ -184,6 +184,9 @@ jobs:
 
       - name: Prepare Release Artifacts & Updater Manifest
         shell: pwsh
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         run: |
           $ver = "${{ steps.versioning.outputs.version }}"
           $tag = "${{ steps.versioning.outputs.tag }}"
@@ -207,18 +210,42 @@ jobs:
           $sigFile = Get-ChildItem -Path "./release-assets/" -Filter "*.sig" | Select-Object -First 1
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           
+          # If no signature was automatically produced by tauri build, sign the bundle asset directly using TAURI_PRIVATE_KEY!
+          if (-not $sigFile -and $env:TAURI_PRIVATE_KEY) {
+            $targetToSign = if ($zipFile) { $zipFile } elseif ($exeFile) { $exeFile } elseif ($msiFile) { $msiFile } else { $null }
+            if ($targetToSign) {
+              Write-Host "Signing $($targetToSign.Name) using TAURI_PRIVATE_KEY..."
+              $passArg = if ($env:TAURI_KEY_PASSWORD) { @("-p", $env:TAURI_KEY_PASSWORD) } else { @("-p", "") }
+              npx tauri signer sign -k "$env:TAURI_PRIVATE_KEY" @passArg $targetToSign.FullName
+              $createdSig = "$($targetToSign.FullName).sig"
+              if (Test-Path $createdSig) {
+                $sigFile = Get-Item $createdSig
+                Copy-Item $createdSig -Destination "./release-assets/"
+                Write-Host "Successfully signed $($targetToSign.Name)!"
+              }
+            }
+          }
+          
           if ($zipFile -and $sigFile) {
             $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
             $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($zipFile.Name)"
             Write-Host "Creating signed updater manifest using $($zipFile.Name)"
+          } elseif ($exeFile -and $sigFile) {
+            $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
+            $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($exeFile.Name)"
+            Write-Host "Creating signed updater manifest using installer $($exeFile.Name)"
+          } elseif ($msiFile -and $sigFile) {
+            $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
+            $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($msiFile.Name)"
+            Write-Host "Creating signed updater manifest using MSI $($msiFile.Name)"
           } elseif ($exeFile) {
             $sigContent = ""
             $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($exeFile.Name)"
-            Write-Warning "No signed zip asset found. Creating fallback updater manifest pointing to installer $($exeFile.Name) (add TAURI_PRIVATE_KEY to repository secrets for signed auto-install)."
+            Write-Warning "No signature available. Creating fallback updater manifest pointing to installer $($exeFile.Name)."
           } elseif ($msiFile) {
             $sigContent = ""
             $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/$($msiFile.Name)"
-            Write-Warning "No signed zip asset found. Creating fallback updater manifest pointing to MSI $($msiFile.Name)."
+            Write-Warning "No signature available. Creating fallback updater manifest pointing to MSI $($msiFile.Name)."
           } else {
             $sigContent = ""
             $downloadUrl = "https://github.com/${{ github.repository }}/releases/tag/$tag"
