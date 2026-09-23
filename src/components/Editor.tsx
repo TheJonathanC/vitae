@@ -63,6 +63,7 @@ function Editor({ content, onChange, errors = [] }: EditorProps) {
         onChange={handleEditorChange}
         onMount={handleEditorDidMount}
         theme="vs-dark"
+        loading={<div className="editor-loading">Loading editor...</div>}
         options={{
           minimap: { enabled: true },
           fontSize: 14,

@@ -361,6 +361,18 @@
   width: 100%;
 }
 
+.editor-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background-color: #1e1e1e;
+  color: #858585;
+  font-family: inherit;
+  font-size: 14px;
+}
+
 .preview-pane {
   flex: 1;
   background-color: #1e1e1e;

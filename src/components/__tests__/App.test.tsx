@@ -12,6 +12,11 @@ vi.mock("@monaco-editor/react", () => ({
       onChange={(e) => onChange?.(e.target.value)}
     />
   ),
+  loader: {
+    config: vi.fn(),
+    init: vi.fn(),
+    __getMonacoInstance: vi.fn(),
+  },
 }));
 
 // Mock Tauri APIs
