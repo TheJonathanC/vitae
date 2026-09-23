@@ -220,7 +220,11 @@ jobs:
               $createdSig = "$($targetToSign.FullName).sig"
               if (Test-Path $createdSig) {
                 $sigFile = Get-Item $createdSig
-                Copy-Item $createdSig -Destination "./release-assets/"
+                $resolvedDest = (Resolve-Path "./release-assets").Path
+                if ($sigFile.DirectoryName -ne $resolvedDest) {
+                  Copy-Item -Force $createdSig -Destination "./release-assets/"
+                  $sigFile = Get-Item (Join-Path $resolvedDest (Split-Path $createdSig -Leaf))
+                }
                 Write-Host "Successfully signed $($targetToSign.Name)!"
               }
             }
