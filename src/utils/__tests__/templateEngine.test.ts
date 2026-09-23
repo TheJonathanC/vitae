@@ -252,6 +252,19 @@ Project: {{name}} [{{technologies}}]
       const os = await import("os");
       const path = await import("path");
 
+      let pdflatexAvailable = false;
+      try {
+        execSync("pdflatex --version", { stdio: "ignore" });
+        pdflatexAvailable = true;
+      } catch {
+        pdflatexAvailable = false;
+      }
+
+      if (!pdflatexAvailable) {
+        // Skip pdflatex compilation execution when not installed (e.g. CI environments)
+        return;
+      }
+
       const defaultData = getDefaultResumeData("Alex Morgan");
 
       for (const tpl of BUILTIN_TEMPLATES) {
