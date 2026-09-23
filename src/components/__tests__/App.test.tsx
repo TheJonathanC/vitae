@@ -256,4 +256,47 @@ describe("App Integration Tests", () => {
       expect(localStorage.getItem("vitae_channel")).toBe("stable");
     });
   });
+
+  it("defaults to Visual Form tab and allows switching to LaTeX Source tab", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "Resume 2026" })).toBeInTheDocument();
+    });
+
+    // Form tab should be active by default
+    const formTab = screen.getByTestId("tab-form-view");
+    const codeTab = screen.getByTestId("tab-code-view");
+
+    expect(formTab).toHaveClass("active");
+    expect(codeTab).not.toHaveClass("active");
+    expect(screen.getByTestId("resume-form")).toBeInTheDocument();
+
+    // Switch to code tab
+    fireEvent.click(codeTab);
+    expect(codeTab).toHaveClass("active");
+    expect(formTab).not.toHaveClass("active");
+    expect(screen.getByTestId("monaco-mock")).toBeInTheDocument();
+
+    // Switch back to form tab
+    fireEvent.click(formTab);
+    expect(formTab).toHaveClass("active");
+    expect(screen.getByTestId("resume-form")).toBeInTheDocument();
+  });
+
+  it("opens template manager modal when clicking Templates button", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "Resume 2026" })).toBeInTheDocument();
+    });
+
+    const templatesBtn = screen.getByTestId("btn-open-templates");
+    fireEvent.click(templatesBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("template-manager-modal")).toBeInTheDocument();
+      expect(screen.getByText("Resume Templates")).toBeInTheDocument();
+    });
+  });
 });

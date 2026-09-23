@@ -3,7 +3,7 @@
 
 mod db;
 
-use db::{init_database, Document};
+use db::{init_database, Document, Template};
 use std::fs;
 use std::process::Command;
 use serde::{Deserialize, Serialize};
@@ -79,6 +79,98 @@ fn update_document(app: tauri::AppHandle, id: String, content: String) -> Result
         .join("vitae.db");
     
     db::update_document(&db_path, &id, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_document_with_template(
+    app: tauri::AppHandle,
+    title: String,
+    template_id: Option<String>,
+    resume_data: Option<String>,
+    initial_content: Option<String>,
+) -> Result<Document, String> {
+    let db_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("Failed to get app data dir")?
+        .join("vitae.db");
+    
+    db::create_document_with_template(&db_path, title, template_id, resume_data, initial_content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_document_full(
+    app: tauri::AppHandle,
+    id: String,
+    content: String,
+    template_id: Option<String>,
+    resume_data: Option<String>,
+) -> Result<(), String> {
+    validate_id(&id)?;
+    let db_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("Failed to get app data dir")?
+        .join("vitae.db");
+    
+    db::update_document_full(
+        &db_path,
+        &id,
+        &content,
+        template_id.as_deref(),
+        resume_data.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_all_templates(app: tauri::AppHandle) -> Result<Vec<Template>, String> {
+    let db_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("Failed to get app data dir")?
+        .join("vitae.db");
+    
+    db::get_all_templates(&db_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_template(app: tauri::AppHandle, id: String) -> Result<Template, String> {
+    let db_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("Failed to get app data dir")?
+        .join("vitae.db");
+    
+    db::get_template(&db_path, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_template(
+    app: tauri::AppHandle,
+    name: String,
+    description: String,
+    content: String,
+) -> Result<Template, String> {
+    let db_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("Failed to get app data dir")?
+        .join("vitae.db");
+    
+    db::create_template(&db_path, name, description, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_template(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let db_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("Failed to get app data dir")?
+        .join("vitae.db");
+    
+    db::delete_template(&db_path, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -510,14 +602,20 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_all_documents,
             create_document,
+            create_document_with_template,
             get_document,
             update_document,
+            update_document_full,
             delete_document,
             compile_latex,
             export_pdf,
             check_latex_installed,
             check_update_custom,
-            install_update_custom
+            install_update_custom,
+            get_all_templates,
+            get_template,
+            create_template,
+            delete_template
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import Editor from "./components/Editor";
 import Sidebar from "./components/Sidebar";
@@ -6,12 +6,35 @@ import PDFViewer from "./components/PDFViewer";
 import SetupGuide from "./components/SetupGuide";
 import UpdateChecker from "./components/UpdateChecker";
 import SettingsModal from "./components/SettingsModal";
-import { Document, LatexError, CompilationResult } from "./types";
+import ResumeForm from "./components/ResumeForm";
+import TemplateManager from "./components/TemplateManager";
+import {
+  Document,
+  LatexError,
+  CompilationResult,
+  Template,
+  ResumeData,
+} from "./types";
+import { BUILTIN_TEMPLATES } from "./utils/templatePresets";
+import {
+  getDefaultResumeData,
+  renderTemplate,
+  extractFieldsFromTemplate,
+} from "./utils/templateEngine";
 import "./App.css";
 
 function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentDocument, setCurrentDocument] = useState<Document | null>(null);
+  const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [editorMode, setEditorMode] = useState<"form" | "code">("form");
+
+  // Structured resume data for the active document
+  const [resumeData, setResumeData] = useState<ResumeData>(() =>
+    getDefaultResumeData("Alex Morgan")
+  );
+
   const [pdfPath, setPdfPath] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +51,12 @@ function App() {
   });
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<{ id: string; content: string } | null>(null);
+  const pendingSaveRef = useRef<{
+    id: string;
+    content: string;
+    template_id?: string | null;
+    resume_data?: string | null;
+  } | null>(null);
 
   const currentDocRef = useRef<Document | null>(currentDocument);
   currentDocRef.current = currentDocument;
@@ -39,29 +67,72 @@ function App() {
   const latexInstalledRef = useRef(latexInstalled);
   latexInstalledRef.current = latexInstalled;
 
-  const flushSave = async (): Promise<{ id: string; content: string } | null> => {
+  // Active template calculation
+  const activeTemplate = useMemo<Template>(() => {
+    if (currentDocument?.template_id) {
+      const found = templates.find((t) => t.id === currentDocument.template_id);
+      if (found) return found;
+    }
+    return templates[0] || BUILTIN_TEMPLATES[0];
+  }, [currentDocument?.template_id, templates]);
+
+  // Extracted custom fields from active template
+  const extractedAnalysis = useMemo(() => {
+    return extractFieldsFromTemplate(activeTemplate.content);
+  }, [activeTemplate.content]);
+
+  const flushSave = async (): Promise<{
+    id: string;
+    content: string;
+    template_id?: string | null;
+    resume_data?: string | null;
+  } | null> => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
     }
     if (pendingSaveRef.current) {
-      const { id, content } = pendingSaveRef.current;
+      const { id, content, template_id, resume_data } = pendingSaveRef.current;
       pendingSaveRef.current = null;
       try {
-        await invoke("update_document", { id, content });
+        await invoke("update_document_full", {
+          id,
+          content,
+          templateId: template_id || null,
+          resumeData: resume_data || null,
+        });
+
         const now = new Date().toISOString();
         if (currentDocRef.current && currentDocRef.current.id === id) {
-          currentDocRef.current = { ...currentDocRef.current, content, updated_at: now };
+          currentDocRef.current = {
+            ...currentDocRef.current,
+            content,
+            template_id,
+            resume_data,
+            updated_at: now,
+          };
         }
         setDocuments((prev) =>
-          prev.map((d) => (d.id === id ? { ...d, content, updated_at: now } : d))
+          prev.map((d) =>
+            d.id === id
+              ? { ...d, content, template_id, resume_data, updated_at: now }
+              : d
+          )
         );
         setCurrentDocument((curr) =>
-          curr && curr.id === id ? { ...curr, content, updated_at: now } : curr
+          curr && curr.id === id
+            ? { ...curr, content, template_id, resume_data, updated_at: now }
+            : curr
         );
-        return { id, content };
+        return { id, content, template_id, resume_data };
       } catch (err) {
-        setError(`Failed to save document: ${err}`);
+        // Fallback to update_document for backward compatibility
+        try {
+          await invoke("update_document", { id, content });
+          return { id, content, template_id, resume_data };
+        } catch (innerErr) {
+          setError(`Failed to save document: ${innerErr}`);
+        }
       }
     }
     return null;
@@ -69,6 +140,7 @@ function App() {
 
   useEffect(() => {
     checkLatexInstallation();
+    loadTemplates();
     loadDocuments();
 
     return () => {
@@ -77,11 +149,138 @@ function App() {
         saveTimeoutRef.current = null;
       }
       if (pendingSaveRef.current) {
-        const { id, content } = pendingSaveRef.current;
-        invoke("update_document", { id, content }).catch(console.error);
+        const { id, content, template_id, resume_data } = pendingSaveRef.current;
+        invoke("update_document_full", {
+          id,
+          content,
+          templateId: template_id || null,
+          resumeData: resume_data || null,
+        }).catch(console.error);
       }
     };
   }, []);
+
+  const loadTemplates = async () => {
+    try {
+      const backendTemplates = await invoke<Template[]>("get_all_templates");
+      if (backendTemplates && backendTemplates.length > 0) {
+        setTemplates(backendTemplates);
+      }
+    } catch (err) {
+      console.warn("Could not fetch templates from backend, using built-ins:", err);
+    }
+  };
+
+  const syncDocumentResumeData = useCallback(
+    (doc: Document | null) => {
+      if (!doc) return;
+
+      if (doc.resume_data) {
+        try {
+          const parsed = JSON.parse(doc.resume_data);
+          setResumeData(parsed);
+          return;
+        } catch (e) {
+          console.error("Failed to parse resume_data JSON:", e);
+        }
+      }
+
+      // Initialize default data with document title
+      const initialData = getDefaultResumeData(doc.title || "Alex Morgan");
+      setResumeData(initialData);
+
+      // If document content is empty or generic, render template
+      if (!doc.content || doc.content.includes("Start writing your document here")) {
+        const tpl =
+          templates.find((t) => t.id === doc.template_id) ||
+          templates[0] ||
+          BUILTIN_TEMPLATES[0];
+        const rendered = renderTemplate(tpl.content, initialData);
+        updateDocumentStateAndQueueSave(
+          doc.id,
+          rendered,
+          tpl.id,
+          JSON.stringify(initialData)
+        );
+      }
+    },
+    [templates]
+  );
+
+  const updateDocumentStateAndQueueSave = (
+    docId: string,
+    content: string,
+    templateId: string | null | undefined,
+    resumeDataString: string | null | undefined
+  ) => {
+    setCurrentDocument((prev) =>
+      prev && prev.id === docId
+        ? {
+            ...prev,
+            content,
+            template_id: templateId,
+            resume_data: resumeDataString,
+          }
+        : null
+    );
+
+    pendingSaveRef.current = {
+      id: docId,
+      content,
+      template_id: templateId,
+      resume_data: resumeDataString,
+    };
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      flushSave();
+    }, 500);
+  };
+
+  const handleResumeDataChange = (newData: ResumeData) => {
+    if (!currentDocument) return;
+    setResumeData(newData);
+
+    // Re-render LaTeX with the active template
+    const rendered = renderTemplate(activeTemplate.content, newData);
+    updateDocumentStateAndQueueSave(
+      currentDocument.id,
+      rendered,
+      activeTemplate.id,
+      JSON.stringify(newData)
+    );
+  };
+
+  const handleSelectTemplate = (template: Template) => {
+    if (!currentDocument) return;
+
+    const rendered = renderTemplate(template.content, resumeData);
+    updateDocumentStateAndQueueSave(
+      currentDocument.id,
+      rendered,
+      template.id,
+      JSON.stringify(resumeData)
+    );
+
+    // Auto trigger compile on template change if autoCompile or compiling
+    setTimeout(() => {
+      compileLatex();
+    }, 300);
+  };
+
+  const handleImportDataIntoResume = (extracted: Partial<ResumeData>) => {
+    if (!extracted.personal) return;
+    const merged: ResumeData = {
+      ...resumeData,
+      personal: {
+        ...resumeData.personal,
+        ...extracted.personal,
+      },
+    };
+    handleResumeDataChange(merged);
+  };
 
   const compileLatex = useCallback(async () => {
     const doc = currentDocRef.current;
@@ -97,13 +296,11 @@ function App() {
       contentToCompile = saved.content;
     }
 
-    // Check if LaTeX is installed before compiling
     if (!latexInstalledRef.current) {
       setShowSetup(true);
       return;
     }
 
-    // Warn for large documents
     const charCount = contentToCompile.length;
     if (charCount > 10000 && !autoCompileRef.current) {
       const proceed = confirm(
@@ -115,8 +312,6 @@ function App() {
     setIsCompiling(true);
     setError(null);
     setCompilationLog("Starting compilation...\n");
-    
-    // Clear PDF to force reload
     setPdfPath(null);
 
     try {
@@ -124,49 +319,46 @@ function App() {
         id: doc.id,
         content: contentToCompile,
       });
-      
+
       setLatexErrors(result.errors);
-      
-      // Build compilation log
-      const errors = result.errors.filter(e => e.severity === "error");
-      const warnings = result.errors.filter(e => e.severity === "warning");
-      
+
+      const errors = result.errors.filter((e) => e.severity === "error");
+      const warnings = result.errors.filter((e) => e.severity === "warning");
+
       let log = "Compilation completed\n\n";
-      
+
       if (errors.length > 0) {
         log += `=== ERRORS (${errors.length}) ===\n`;
-        errors.forEach(e => {
+        errors.forEach((e) => {
           log += e.line ? `Line ${e.line}: ${e.message}\n` : `${e.message}\n`;
         });
         log += "\n";
       }
-      
+
       if (warnings.length > 0) {
         log += `=== WARNINGS (${warnings.length}) ===\n`;
-        warnings.forEach(w => {
+        warnings.forEach((w) => {
           log += w.line ? `Line ${w.line}: ${w.message}\n` : `${w.message}\n`;
         });
         log += "\n";
       }
-      
+
       if (result.success) {
         log += `✓ PDF generated successfully at ${result.pdf_path}`;
       } else {
         log += "✗ Compilation failed";
       }
-      
+
       setCompilationLog(log);
-      
+
       if (result.success && result.pdf_path) {
         setPdfPath(result.pdf_path);
-        
-        // Show warnings if any
         if (warnings.length > 0) {
           setError(`Compiled with ${warnings.length} warning(s). Click "View Log" for details.`);
         }
       } else {
         const errorMsgs = errors
-          .map(e => e.line ? `Line ${e.line}: ${e.message}` : e.message)
+          .map((e) => (e.line ? `Line ${e.line}: ${e.message}` : e.message))
           .join("\n");
         setError(`Compilation failed:\n${errorMsgs || "Unknown error"}`);
       }
@@ -195,8 +387,7 @@ function App() {
     try {
       const installed = await invoke<boolean>("check_latex_installed");
       setLatexInstalled(installed);
-      
-      // Show setup guide on first run if LaTeX not installed
+
       const hasSeenSetup = localStorage.getItem("vitae_setup_complete");
       if (!installed && !hasSeenSetup) {
         setShowSetup(true);
@@ -212,6 +403,7 @@ function App() {
       setDocuments(docs);
       if (docs.length > 0 && !currentDocument) {
         setCurrentDocument(docs[0]);
+        syncDocumentResumeData(docs[0]);
       }
     } catch (err) {
       setError(`Failed to load documents: ${err}`);
@@ -219,16 +411,35 @@ function App() {
   };
 
   const createNewDocument = async () => {
-    const title = prompt("Enter document title:");
+    const title = prompt("Enter resume or document title:");
     if (!title) return;
 
     await flushSave();
 
     try {
+      const defaultTemplate = templates[0] || BUILTIN_TEMPLATES[0];
+      const initialResumeData = getDefaultResumeData(title);
+      const initialContent = renderTemplate(defaultTemplate.content, initialResumeData);
+
       const newDoc = await invoke<Document>("create_document", { title });
-      setDocuments((prev) => [newDoc, ...prev]);
-      setCurrentDocument(newDoc);
-      setPdfPath(null);
+      if (newDoc) {
+        newDoc.template_id = defaultTemplate.id;
+        newDoc.resume_data = JSON.stringify(initialResumeData);
+        newDoc.content = initialContent;
+
+        setDocuments((prev) => [newDoc, ...prev]);
+        setCurrentDocument(newDoc);
+        setResumeData(initialResumeData);
+        setPdfPath(null);
+
+        // Queue save with rendered template content and resume data
+        updateDocumentStateAndQueueSave(
+          newDoc.id,
+          initialContent,
+          defaultTemplate.id,
+          JSON.stringify(initialResumeData)
+        );
+      }
     } catch (err) {
       setError(`Failed to create document: ${err}`);
     }
@@ -242,20 +453,24 @@ function App() {
     try {
       const doc = await invoke<Document>("get_document", { id });
       setCurrentDocument(doc);
+      syncDocumentResumeData(doc);
       setPdfPath(null);
     } catch (err) {
       setError(`Failed to load document: ${err}`);
     }
   };
 
-  const updateContent = (content: string) => {
+  const updateContentDirect = (content: string) => {
     if (!currentDocument) return;
 
-    // Immediately update in-memory state for lag-free typing
     setCurrentDocument((prev) => (prev ? { ...prev, content } : null));
 
-    // Queue debounced save
-    pendingSaveRef.current = { id: currentDocument.id, content };
+    pendingSaveRef.current = {
+      id: currentDocument.id,
+      content,
+      template_id: currentDocument.template_id,
+      resume_data: currentDocument.resume_data,
+    };
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -281,7 +496,9 @@ function App() {
       setDocuments((prev) => {
         const remaining = prev.filter((d) => d.id !== id);
         if (currentDocRef.current?.id === id) {
-          setCurrentDocument(remaining[0] || null);
+          const nextDoc = remaining[0] || null;
+          setCurrentDocument(nextDoc);
+          syncDocumentResumeData(nextDoc);
           setPdfPath(null);
         }
         return remaining;
@@ -323,12 +540,21 @@ function App() {
           onChannelChange={(newChannel) => setUpdateChannel(newChannel)}
         />
       )}
+      {showTemplateModal && (
+        <TemplateManager
+          templates={templates}
+          currentTemplateId={activeTemplate.id}
+          onSelectTemplate={handleSelectTemplate}
+          onTemplatesUpdated={loadTemplates}
+          onClose={() => setShowTemplateModal(false)}
+          onImportDataIntoResume={handleImportDataIntoResume}
+        />
+      )}
       {showSetup && (
         <SetupGuide
           onClose={() => {
             setShowSetup(false);
             localStorage.setItem("vitae_setup_complete", "true");
-            // Recheck LaTeX installation
             checkLatexInstallation();
           }}
         />
@@ -344,7 +570,7 @@ function App() {
       />
       <div className="main-content">
         <div className="toolbar">
-          <h1>{currentDocument?.title || "Vitae LaTeX Editor"}</h1>
+          <h1>{currentDocument?.title || "Vitae Resume Builder"}</h1>
           <div className="toolbar-actions">
             {!latexInstalled && (
               <button
@@ -355,6 +581,14 @@ function App() {
                 ⚙️ Setup LaTeX
               </button>
             )}
+            <button
+              onClick={() => setShowTemplateModal(true)}
+              className="btn-secondary"
+              title="Browse, change, or import templates"
+              data-testid="btn-open-templates"
+            >
+              🎨 Templates ({templates.length})
+            </button>
             <button
               onClick={() => setAutoCompile(!autoCompile)}
               className={`btn-auto-compile ${autoCompile ? "active" : ""}`}
@@ -394,24 +628,55 @@ function App() {
             </button>
           </div>
         </div>
+
         {error && (
           <div className="error-banner">
             {error}
             <button onClick={() => setError(null)}>×</button>
           </div>
         )}
+
         <div className="editor-container">
           <div className="editor-pane">
-            <Editor
-              content={currentDocument?.content || ""}
-              onChange={updateContent}
-              errors={latexErrors}
-            />
+            <div className="editor-tabs-bar">
+              <button
+                className={`editor-tab ${editorMode === "form" ? "active" : ""}`}
+                onClick={() => setEditorMode("form")}
+                data-testid="tab-form-view"
+              >
+                📝 Visual Form
+                <span className="tab-badge">Default</span>
+              </button>
+              <button
+                className={`editor-tab ${editorMode === "code" ? "active" : ""}`}
+                onClick={() => setEditorMode("code")}
+                data-testid="tab-code-view"
+              >
+                💻 LaTeX Source
+              </button>
+            </div>
+
+            {editorMode === "form" ? (
+              <ResumeForm
+                data={resumeData}
+                onChange={handleResumeDataChange}
+                customFields={extractedAnalysis.customVariables}
+                templateName={activeTemplate.name}
+                onChangeTemplateClick={() => setShowTemplateModal(true)}
+              />
+            ) : (
+              <Editor
+                content={currentDocument?.content || ""}
+                onChange={updateContentDirect}
+                errors={latexErrors}
+              />
+            )}
           </div>
           <div className="preview-pane">
             <PDFViewer pdfPath={pdfPath} />
           </div>
         </div>
+
         {showLog && compilationLog && (
           <div className="compilation-log">
             <div className="log-header">
