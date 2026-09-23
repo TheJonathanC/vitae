@@ -38,7 +38,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Setup Rust toolchain
@@ -73,7 +73,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Setup Rust toolchain
@@ -157,6 +157,16 @@ jobs:
           } else {
             $tauriConf.tauri.updater.endpoints = @("https://github.com/${{ github.repository }}/releases/latest/download/latest.json")
           }
+
+          # MSI (WiX) cannot handle alphanumeric pre-release identifiers (e.g. -beta.X)
+          # due to Windows Installer schema limits (must be numeric-only <= 65535).
+          # Use NSIS for pre-releases, and both NSIS and MSI for stable numeric releases.
+          if ($ver -match "[a-zA-Z]") {
+            $tauriConf.tauri.bundle.targets = @("nsis")
+          } else {
+            $tauriConf.tauri.bundle.targets = @("nsis", "msi")
+          }
+
           $tauriConf | ConvertTo-Json -Depth 10 | Set-Content ./src-tauri/tauri.conf.json
           
           # Update Cargo.toml [package] version only (anchored to line start so dependencies are untouched)
@@ -249,11 +259,16 @@ jobs:
         if: hashFiles('./release-assets/latest-beta.json') != ''
         shell: pwsh
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git tag -f latest-beta ${{ github.sha }}
           git push -f origin latest-beta
-          gh release delete latest-beta --yes --cleanup-tag=false 2>$null
+          try {
+            gh release delete latest-beta --yes --cleanup-tag=false 2>$null
+          } catch {
+            Write-Host "No existing latest-beta release found to delete."
+          }
           $LASTEXITCODE = 0
 
       - name: Update Rolling Beta Channel Release
