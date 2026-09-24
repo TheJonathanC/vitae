@@ -7,6 +7,71 @@ use db::{init_database, Document, Template};
 use std::fs;
 use std::process::Command;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
+
+static COMPILE_MUTEX: Mutex<()> = Mutex::new(());
+static LAST_COMPILE_HASH: Mutex<Option<HashMap<String, u64>>> = Mutex::new(None);
+
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+
+#[allow(unused_mut)]
+fn create_silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+fn find_pdflatex_binary() -> std::path::PathBuf {
+    // 1. Check if "pdflatex" is directly accessible in PATH
+    let mut probe = create_silent_command("pdflatex");
+    probe.arg("--version");
+    if let Ok(output) = probe.output() {
+        if output.status.success() {
+            return std::path::PathBuf::from("pdflatex");
+        }
+    }
+
+    // 2. On Windows, check common MiKTeX and TeXLive installation directories
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates = Vec::new();
+        if let Ok(program_files) = std::env::var("ProgramFiles") {
+            candidates.push(std::path::PathBuf::from(&program_files).join("MiKTeX").join("miktex").join("bin").join("x64").join("pdflatex.exe"));
+        }
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            candidates.push(std::path::PathBuf::from(&local_app_data).join("Programs").join("MiKTeX").join("miktex").join("bin").join("x64").join("pdflatex.exe"));
+        }
+        for year in (2020..=2028).rev() {
+            candidates.push(std::path::PathBuf::from(format!(r"C:\texlive\{}\bin\windows\pdflatex.exe", year)));
+            candidates.push(std::path::PathBuf::from(format!(r"C:\texlive\{}\bin\win32\pdflatex.exe", year)));
+        }
+        for candidate in candidates {
+            if candidate.exists() {
+                let mut cmd = create_silent_command(&candidate);
+                cmd.arg("--version");
+                if let Ok(output) = cmd.output() {
+                    if output.status.success() {
+                        return candidate;
+                    }
+                }
+            }
+        }
+    }
+
+    std::path::PathBuf::from("pdflatex")
+}
 
 const LATEX_TEMP_EXTENSIONS: &[&str] = &[
     "tex", "pdf", "aux", "log", "out", "toc", "nav", "snm",
@@ -184,6 +249,13 @@ fn delete_document(app: tauri::AppHandle, id: String) -> Result<(), String> {
     
     db::delete_document(&db_path, &id).map_err(|e| e.to_string())?;
 
+    // Clear compilation cache for this document
+    if let Ok(mut map) = LAST_COMPILE_HASH.lock() {
+        if let Some(m) = map.as_mut() {
+            m.remove(&id);
+        }
+    }
+
     // Clean up temporary compilation files
     let temp_dir = app_data_dir.join("temp");
     for ext in LATEX_TEMP_EXTENSIONS {
@@ -202,8 +274,6 @@ fn check_needs_rerun(output: &str) -> bool {
         || lower.contains("rerun to get citations correct")
         || lower.contains("rerun to get bibliographical references right")
         || lower.contains("rerun to get order correct")
-        || lower.contains("rerun to get")
-        || lower.contains("rerun to ")
         || lower.contains("rerun latex")
         || lower.contains("please rerun")
         || lower.contains("(re)run latex")
@@ -212,6 +282,9 @@ fn check_needs_rerun(output: &str) -> bool {
 #[tauri::command]
 fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<CompilationResult, String> {
     validate_id(&id)?;
+
+    // Lock to prevent concurrent compilations from colliding and locking files on Windows
+    let _lock = COMPILE_MUTEX.lock().map_err(|e| format!("Failed to acquire compile lock: {}", e))?;
 
     // Get temp directory for compilation
     let temp_dir = app
@@ -224,21 +297,35 @@ fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<C
     
     let tex_file = temp_dir.join(format!("{}.tex", id));
     let pdf_file = temp_dir.join(format!("{}.pdf", id));
-    
-    // Delete old PDF and auxiliary files to ensure fresh compilation
-    let _ = fs::remove_file(&pdf_file);
-    for ext in LATEX_TEMP_EXTENSIONS {
-        if *ext != "tex" {
-            let _ = fs::remove_file(temp_dir.join(format!("{}.{}", id, ext)));
-        }
+
+    let content_hash = calculate_hash(&content);
+
+    // If identical content was already compiled successfully and PDF exists, return cached result immediately (<1ms)
+    let is_identical = {
+        let map = LAST_COMPILE_HASH.lock().unwrap();
+        map.as_ref().and_then(|m| m.get(&id).copied()) == Some(content_hash)
+    };
+    if is_identical && pdf_file.exists() {
+        let pdf_path = pdf_file
+            .to_str()
+            .ok_or("Invalid PDF path")?
+            .to_string()
+            .replace("\\", "/");
+        return Ok(CompilationResult {
+            success: true,
+            pdf_path: Some(pdf_path),
+            errors: vec![],
+        });
     }
-    
+
     // Write LaTeX content to file
-    fs::write(&tex_file, content).map_err(|e| format!("Failed to write tex file: {}", e))?;
-    
-    // Helper to execute pdflatex
+    fs::write(&tex_file, &content).map_err(|e| format!("Failed to write tex file: {}", e))?;
+
+    let binary = find_pdflatex_binary();
+
+    // Helper to execute pdflatex quietly without opening console window
     let run_pdflatex = || {
-        Command::new("pdflatex")
+        create_silent_command(&binary)
             .arg("-interaction=nonstopmode")
             .arg("-halt-on-error")
             .arg("-file-line-error")
@@ -248,15 +335,28 @@ fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<C
             .output()
     };
 
-    // Run pass 1
+    // Run pass 1 (incremental: keeps existing .aux and .out for ultra-fast single-pass compilation)
     let output = run_pdflatex()
         .map_err(|e| format!("Failed to run pdflatex: {}. Make sure pdflatex is installed and in PATH.", e))?;
     
     let mut current_stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
-    // Check if subsequent passes are required for cross-references / TOC / citations
+    // If compilation failed and PDF was not created, auxiliary files might have been corrupted from a previous interrupted run.
+    // Try one clean run by removing aux files and re-running.
+    if !pdf_file.exists() {
+        for ext in LATEX_TEMP_EXTENSIONS {
+            if *ext != "tex" {
+                let _ = fs::remove_file(temp_dir.join(format!("{}.{}", id, ext)));
+            }
+        }
+        if let Ok(clean_output) = run_pdflatex() {
+            current_stdout = String::from_utf8_lossy(&clean_output.stdout).to_string();
+        }
+    }
+
+    // Check if subsequent pass is required for cross-references / outlines / citations
     let mut passes = 1;
-    const MAX_PASSES: usize = 3;
+    const MAX_PASSES: usize = 2; // With preserved aux files, at most 2 passes is ever required
     while pdf_file.exists() && passes < MAX_PASSES && check_needs_rerun(&current_stdout) {
         if let Ok(rerun_output) = run_pdflatex() {
             current_stdout = String::from_utf8_lossy(&rerun_output.stdout).to_string();
@@ -287,6 +387,11 @@ fn compile_latex(app: tauri::AppHandle, id: String, content: String) -> Result<C
     
     // PDF exists - check for errors
     let has_errors = errors.iter().any(|e| e.severity == "error");
+
+    if !has_errors {
+        let mut map = LAST_COMPILE_HASH.lock().unwrap();
+        map.get_or_insert_with(HashMap::new).insert(id.clone(), content_hash);
+    }
     
     let pdf_path = pdf_file
         .to_str()
@@ -476,11 +581,10 @@ fn export_pdf(app: tauri::AppHandle, id: String, destination: String) -> Result<
 
 #[tauri::command]
 fn check_latex_installed() -> Result<bool, String> {
-    // Try to run pdflatex --version
-    match Command::new("pdflatex")
-        .arg("--version")
-        .output()
-    {
+    let binary = find_pdflatex_binary();
+    let mut cmd = create_silent_command(&binary);
+    cmd.arg("--version");
+    match cmd.output() {
         Ok(output) => Ok(output.status.success()),
         Err(_) => Ok(false), // Command not found
     }

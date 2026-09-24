@@ -66,4 +66,13 @@ describe("PDFViewer component", () => {
       expect(screen.getByText(/Failed to load PDF: Error: Conversion failed/i)).toBeInTheDocument();
     });
   });
+
+  it("renders compiling indicator badge when isCompiling is true and pdf is loaded", async () => {
+    render(<PDFViewer pdfPath="C:/path/to/test.pdf" isCompiling={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-compiling-indicator")).toBeInTheDocument();
+      expect(screen.getByText(/Updating preview.../i)).toBeInTheDocument();
+    });
+  });
 });

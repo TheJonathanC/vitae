@@ -3,9 +3,10 @@ import { convertFileSrc } from "@tauri-apps/api/tauri";
 
 interface PDFViewerProps {
   pdfPath: string | null;
+  isCompiling?: boolean;
 }
 
-function PDFViewer({ pdfPath }: PDFViewerProps) {
+function PDFViewer({ pdfPath, isCompiling = false }: PDFViewerProps) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +65,12 @@ function PDFViewer({ pdfPath }: PDFViewerProps) {
 
   return (
     <div className="pdf-viewer">
+      {isCompiling && (
+        <div className="pdf-compiling-badge" data-testid="pdf-compiling-indicator">
+          <span className="compiling-dot" />
+          <span>Updating preview...</span>
+        </div>
+      )}
       <iframe src={pdfUrl} title="PDF Preview" />
     </div>
   );

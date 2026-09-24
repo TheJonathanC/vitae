@@ -55,7 +55,9 @@ function App() {
   const [showSetup, setShowSetup] = useState(false);
   const [latexInstalled, setLatexInstalled] = useState(true);
   const [latexErrors, setLatexErrors] = useState<LatexError[]>([]);
-  const [autoCompile, setAutoCompile] = useState(false);
+  const [autoCompile, setAutoCompile] = useState<boolean>(() => {
+    return localStorage.getItem("vitae_auto_compile") === "true";
+  });
   const [compilationLog, setCompilationLog] = useState<string>("");
   const [showLog, setShowLog] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -79,6 +81,9 @@ function App() {
     template_id?: string | null;
     resume_data?: string | null;
   } | null>(null);
+
+  const isCompilingRef = useRef(false);
+  const queuedCompileRef = useRef(false);
 
   const currentDocRef = useRef<Document | null>(currentDocument);
   currentDocRef.current = currentDocument;
@@ -308,6 +313,11 @@ function App() {
     const doc = currentDocRef.current;
     if (!doc) return;
 
+    if (isCompilingRef.current) {
+      queuedCompileRef.current = true;
+      return;
+    }
+
     let contentToCompile = doc.content;
     if (pendingSaveRef.current && pendingSaveRef.current.id === doc.id) {
       contentToCompile = pendingSaveRef.current.content;
@@ -331,10 +341,11 @@ function App() {
       if (!proceed) return;
     }
 
+    isCompilingRef.current = true;
     setIsCompiling(true);
     setError(null);
     setCompilationLog("Starting compilation...\n");
-    setPdfPath(null);
+    // Preserve existing pdfPath so the preview does not blank out or flicker
 
     try {
       const result = await invoke<CompilationResult>("compile_latex", {
@@ -374,7 +385,8 @@ function App() {
       setCompilationLog(log);
 
       if (result.success && result.pdf_path) {
-        setPdfPath(result.pdf_path);
+        // Append unique timestamp query param so PDFViewer can reload smoothly without unmounting
+        setPdfPath(`${result.pdf_path}?t=${Date.now()}`);
         if (warnings.length > 0) {
           setError(`Compiled with ${warnings.length} warning(s). Click "View Log" for details.`);
         }
@@ -390,17 +402,24 @@ function App() {
       setCompilationLog(`ERROR\n${errorMsg}`);
       setLatexErrors([]);
     } finally {
+      isCompilingRef.current = false;
       setIsCompiling(false);
+      if (queuedCompileRef.current) {
+        queuedCompileRef.current = false;
+        setTimeout(() => {
+          compileLatex();
+        }, 50);
+      }
     }
   }, []);
 
-  // Auto-compile with debounce
+  // Auto-compile with snappy 1000ms debounce
   useEffect(() => {
     if (!autoCompile || !currentDocument) return;
 
     const timer = setTimeout(() => {
       compileLatex();
-    }, 2000);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [currentDocument?.id, currentDocument?.content, autoCompile, compileLatex]);
@@ -707,10 +726,19 @@ function App() {
               <span>Templates ({templates.length})</span>
             </button>
             <button
-              onClick={() => setAutoCompile(!autoCompile)}
+              onClick={() => {
+                setAutoCompile((prev) => {
+                  const next = !prev;
+                  localStorage.setItem("vitae_auto_compile", String(next));
+                  if (next && currentDocRef.current) {
+                    setTimeout(() => compileLatex(), 50);
+                  }
+                  return next;
+                });
+              }}
               className={`btn-auto-compile ${autoCompile ? "active" : ""}`}
               disabled={!currentDocument}
-              title="Auto-compile on change"
+              title={autoCompile ? "Auto-compile active (1s debounce)" : "Enable auto-compile on change"}
             >
               <IconAuto size={14} />
               <span>Auto</span>
@@ -835,7 +863,7 @@ function App() {
               flex: viewMode === "split" ? "none" : undefined,
             }}
           >
-            <PDFViewer pdfPath={pdfPath} />
+            <PDFViewer pdfPath={pdfPath} isCompiling={isCompiling} />
           </div>
         </div>
 
