@@ -29,6 +29,7 @@ function App() {
   const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editorMode, setEditorMode] = useState<"form" | "code">("form");
+  const [viewMode, setViewMode] = useState<"split" | "editor" | "preview">("split");
 
   // Structured resume data for the active document
   const [resumeData, setResumeData] = useState<ResumeData>(() =>
@@ -572,6 +573,35 @@ function App() {
         <div className="toolbar">
           <h1>{currentDocument?.title || "Vitae Resume Builder"}</h1>
           <div className="toolbar-actions">
+            <div className="layout-toggle-group" role="group" aria-label="Layout view mode">
+              <button
+                type="button"
+                className={`btn-layout-toggle ${viewMode === "split" ? "active" : ""}`}
+                onClick={() => setViewMode("split")}
+                title="Split View: Form & Preview side-by-side"
+                data-testid="btn-toggle-split"
+              >
+                ◫ Split
+              </button>
+              <button
+                type="button"
+                className={`btn-layout-toggle ${viewMode === "editor" ? "active" : ""}`}
+                onClick={() => setViewMode("editor")}
+                title="Form Only: Full width for comfortable editing without squishing"
+                data-testid="btn-toggle-editor"
+              >
+                📄 Form Only
+              </button>
+              <button
+                type="button"
+                className={`btn-layout-toggle ${viewMode === "preview" ? "active" : ""}`}
+                onClick={() => setViewMode("preview")}
+                title="Preview Only: Full width PDF preview"
+                data-testid="btn-toggle-preview"
+              >
+                👁️ Preview Only
+              </button>
+            </div>
             {!latexInstalled && (
               <button
                 onClick={() => setShowSetup(true)}
@@ -636,24 +666,63 @@ function App() {
           </div>
         )}
 
-        <div className="editor-container">
-          <div className="editor-pane">
+        <div className={`editor-container view-${viewMode}`}>
+          <div
+            className={`editor-pane ${viewMode === "editor" ? "full-width" : ""}`}
+            style={{ display: viewMode === "preview" ? "none" : "flex" }}
+          >
             <div className="editor-tabs-bar">
-              <button
-                className={`editor-tab ${editorMode === "form" ? "active" : ""}`}
-                onClick={() => setEditorMode("form")}
-                data-testid="tab-form-view"
-              >
-                📝 Visual Form
-                <span className="tab-badge">Default</span>
-              </button>
-              <button
-                className={`editor-tab ${editorMode === "code" ? "active" : ""}`}
-                onClick={() => setEditorMode("code")}
-                data-testid="tab-code-view"
-              >
-                💻 LaTeX Source
-              </button>
+              <div className="editor-tabs-left">
+                <button
+                  className={`editor-tab ${editorMode === "form" ? "active" : ""}`}
+                  onClick={() => setEditorMode("form")}
+                  data-testid="tab-form-view"
+                  title="Fill structured resume fields with live PDF preview"
+                >
+                  <span className="tab-icon">📝</span>
+                  <span className="tab-title">Visual Form</span>
+                  <span className="tab-badge">Default</span>
+                </button>
+                <button
+                  className={`editor-tab ${editorMode === "code" ? "active" : ""}`}
+                  onClick={() => setEditorMode("code")}
+                  data-testid="tab-code-view"
+                  title="Direct LaTeX source editor"
+                >
+                  <span className="tab-icon">💻</span>
+                  <span className="tab-title">LaTeX Source</span>
+                </button>
+              </div>
+
+              <div className="view-mode-controls" role="group" aria-label="Layout view mode">
+                <button
+                  type="button"
+                  className={`btn-view-mode ${viewMode === "split" ? "active" : ""}`}
+                  onClick={() => setViewMode("split")}
+                  title="Split View: Form & Preview"
+                  data-testid="btn-view-split"
+                >
+                  ◫ Split
+                </button>
+                <button
+                  type="button"
+                  className={`btn-view-mode ${viewMode === "editor" ? "active" : ""}`}
+                  onClick={() => setViewMode("editor")}
+                  title="Expand Form to full width"
+                  data-testid="btn-view-editor"
+                >
+                  📄 Full Form
+                </button>
+                <button
+                  type="button"
+                  className={`btn-view-mode ${viewMode === "preview" ? "active" : ""}`}
+                  onClick={() => setViewMode("preview")}
+                  title="Expand PDF Preview to full width"
+                  data-testid="btn-view-preview"
+                >
+                  👁️ Full PDF
+                </button>
+              </div>
             </div>
 
             {editorMode === "form" ? (
@@ -672,7 +741,30 @@ function App() {
               />
             )}
           </div>
-          <div className="preview-pane">
+          <div
+            className={`preview-pane ${viewMode === "preview" ? "full-width" : ""}`}
+            style={{ display: viewMode === "editor" ? "none" : "flex" }}
+          >
+            {viewMode === "preview" && (
+              <div className="preview-top-bar">
+                <button
+                  type="button"
+                  className="btn-return-view"
+                  onClick={() => setViewMode("split")}
+                  title="Return to side-by-side split view"
+                >
+                  ◫ Return to Split View
+                </button>
+                <button
+                  type="button"
+                  className="btn-return-view"
+                  onClick={() => setViewMode("editor")}
+                  title="Return to Form Editor"
+                >
+                  📝 Return to Form
+                </button>
+              </div>
+            )}
             <PDFViewer pdfPath={pdfPath} />
           </div>
         </div>

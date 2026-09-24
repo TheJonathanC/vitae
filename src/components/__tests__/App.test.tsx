@@ -299,4 +299,33 @@ describe("App Integration Tests", () => {
       expect(screen.getByText("Resume Templates")).toBeInTheDocument();
     });
   });
+
+  it("supports switching layout view modes (Split, Form Only, Preview Only)", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "Resume 2026" })).toBeInTheDocument();
+    });
+
+    const splitBtn = screen.getByTestId("btn-toggle-split");
+    const editorBtn = screen.getByTestId("btn-toggle-editor");
+    const previewBtn = screen.getByTestId("btn-toggle-preview");
+
+    // Default is split mode
+    expect(splitBtn).toHaveClass("active");
+
+    // Switch to Form Only
+    fireEvent.click(editorBtn);
+    expect(editorBtn).toHaveClass("active");
+    expect(splitBtn).not.toHaveClass("active");
+
+    // Switch to Preview Only
+    fireEvent.click(previewBtn);
+    expect(previewBtn).toHaveClass("active");
+    expect(editorBtn).not.toHaveClass("active");
+
+    // Switch back to Split
+    fireEvent.click(splitBtn);
+    expect(splitBtn).toHaveClass("active");
+  });
 });

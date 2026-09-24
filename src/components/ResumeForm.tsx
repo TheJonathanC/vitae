@@ -9,6 +9,15 @@ import {
   ExtractedTemplateField,
 } from "../types";
 
+export type ResumeSectionId =
+  | "all"
+  | "personal"
+  | "experience"
+  | "education"
+  | "projects"
+  | "skills"
+  | "custom";
+
 interface ResumeFormProps {
   data: ResumeData;
   onChange: (newData: ResumeData) => void;
@@ -25,6 +34,96 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   onChangeTemplateClick,
 }) => {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [activeSection, setActiveSection] = useState<ResumeSectionId>("all");
+
+  const hasCustom =
+    customFields.length > 0 || (data.customSections && data.customSections.length > 0);
+
+  const sequentialSections: Array<Exclude<ResumeSectionId, "all">> = [
+    "personal",
+    "experience",
+    "education",
+    "projects",
+    "skills",
+  ];
+  if (hasCustom) {
+    sequentialSections.push("custom");
+  }
+
+  const SECTION_METADATA: Record<string, { label: string; icon: string }> = {
+    personal: { label: "Personal Info", icon: "👤" },
+    experience: { label: "Experience", icon: "💼" },
+    education: { label: "Education", icon: "🎓" },
+    projects: { label: "Projects", icon: "🚀" },
+    skills: { label: "Skills", icon: "🛠️" },
+    custom: { label: "Custom Fields", icon: "✨" },
+  };
+
+  const getAdjacentSections = (current: string) => {
+    const idx = sequentialSections.indexOf(current as any);
+    if (idx === -1) return { prev: null, next: null };
+    const prev = idx > 0 ? sequentialSections[idx - 1] : null;
+    const next = idx < sequentialSections.length - 1 ? sequentialSections[idx + 1] : null;
+    return { prev, next };
+  };
+
+  const renderTraversalFooter = (sectionKey: Exclude<ResumeSectionId, "all">) => {
+    const { prev, next } = getAdjacentSections(sectionKey);
+    return (
+      <div className="section-traversal-bar" data-testid={`traversal-bar-${sectionKey}`}>
+        {prev ? (
+          <button
+            type="button"
+            className="btn-traversal btn-prev"
+            onClick={() => setActiveSection(prev)}
+            data-testid={`btn-nav-prev-${sectionKey}`}
+            title={`Go to previous section: ${SECTION_METADATA[prev]?.label}`}
+          >
+            ← {SECTION_METADATA[prev]?.icon} {SECTION_METADATA[prev]?.label}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-traversal btn-secondary-nav"
+            onClick={() => setActiveSection("all")}
+            title="View all sections at once"
+          >
+            📑 View All Sections
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="btn-traversal btn-traversal-center"
+          onClick={() => setActiveSection(activeSection === "all" ? sectionKey : "all")}
+          title={activeSection === "all" ? "Focus on this section only" : "View all sections"}
+        >
+          {activeSection === "all" ? `🔍 Focus ${SECTION_METADATA[sectionKey]?.label}` : "📑 View All Sections"}
+        </button>
+
+        {next ? (
+          <button
+            type="button"
+            className="btn-traversal btn-traversal-primary btn-next"
+            onClick={() => setActiveSection(next)}
+            data-testid={`btn-nav-next-${sectionKey}`}
+            title={`Go to next section: ${SECTION_METADATA[next]?.label}`}
+          >
+            {SECTION_METADATA[next]?.icon} {SECTION_METADATA[next]?.label} →
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-traversal btn-traversal-primary"
+            onClick={() => setActiveSection("all")}
+            title="Done traversing, view all sections"
+          >
+            ✓ Finish & View All
+          </button>
+        )}
+      </div>
+    );
+  };
 
   const toggleSection = (sectionKey: string) => {
     setCollapsedSections((prev) => ({
@@ -280,7 +379,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
   return (
     <div className="resume-form-container" data-testid="resume-form">
-      {/* Template Header Badge */}
+      {/* Template Header Banner */}
       <div className="form-template-banner">
         <div className="form-template-info">
           <span className="template-label">Active Template:</span>
@@ -298,25 +397,146 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
         )}
       </div>
 
-      {/* 1. PERSONAL INFORMATION */}
-      <div className="form-card">
-        <div
-          className="form-card-header"
-          onClick={() => toggleSection("personal")}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="header-title">
-            <span className="icon">👤</span>
-            <h3>Personal Information</h3>
-          </div>
-          <span className="toggle-indicator">
-            {collapsedSections["personal"] ? "▼" : "▲"}
-          </span>
-        </div>
+      {/* Section Navigation Bar */}
+      <div className="section-nav-container">
+        <div className="section-tabs-bar" role="tablist" aria-label="Resume Sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === "all"}
+            className={`section-tab-btn ${activeSection === "all" ? "active" : ""}`}
+            onClick={() => setActiveSection("all")}
+            data-testid="section-tab-all"
+            title="Show all resume sections at once"
+          >
+            <span className="tab-icon">📑</span>
+            <span className="tab-label">All Sections</span>
+          </button>
 
-        {!collapsedSections["personal"] && (
-          <div className="form-card-body">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === "personal"}
+            className={`section-tab-btn ${activeSection === "personal" ? "active" : ""}`}
+            onClick={() => setActiveSection("personal")}
+            data-testid="section-tab-personal"
+            title="Personal information & contact details"
+          >
+            <span className="tab-icon">👤</span>
+            <span className="tab-label">Personal</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === "experience"}
+            className={`section-tab-btn ${activeSection === "experience" ? "active" : ""}`}
+            onClick={() => setActiveSection("experience")}
+            data-testid="section-tab-experience"
+            title="Work experience and employment history"
+          >
+            <span className="tab-icon">💼</span>
+            <span className="tab-label">Experience</span>
+            <span className="section-badge">{data.experience.length}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === "education"}
+            className={`section-tab-btn ${activeSection === "education" ? "active" : ""}`}
+            onClick={() => setActiveSection("education")}
+            data-testid="section-tab-education"
+            title="Degrees, schools, and credentials"
+          >
+            <span className="tab-icon">🎓</span>
+            <span className="tab-label">Education</span>
+            <span className="section-badge">{data.education.length}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === "projects"}
+            className={`section-tab-btn ${activeSection === "projects" ? "active" : ""}`}
+            onClick={() => setActiveSection("projects")}
+            data-testid="section-tab-projects"
+            title="Side projects and portfolio items"
+          >
+            <span className="tab-icon">🚀</span>
+            <span className="tab-label">Projects</span>
+            <span className="section-badge">{data.projects.length}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === "skills"}
+            className={`section-tab-btn ${activeSection === "skills" ? "active" : ""}`}
+            onClick={() => setActiveSection("skills")}
+            data-testid="section-tab-skills"
+            title="Skills and technologies"
+          >
+            <span className="tab-icon">🛠️</span>
+            <span className="tab-label">Skills</span>
+            <span className="section-badge">{data.skills.length}</span>
+          </button>
+
+          {hasCustom && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === "custom"}
+              className={`section-tab-btn ${activeSection === "custom" ? "active" : ""}`}
+              onClick={() => setActiveSection("custom")}
+              data-testid="section-tab-custom"
+              title="Template custom variables and extra sections"
+            >
+              <span className="tab-icon">✨</span>
+              <span className="tab-label">Custom</span>
+              <span className="section-badge">
+                {(data.customSections?.length || 0) + customFields.length}
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 1. PERSONAL INFORMATION */}
+      {(activeSection === "all" || activeSection === "personal") && (
+        <div className="form-card" data-testid="section-card-personal">
+          <div
+            className="form-card-header"
+            onClick={() => toggleSection("personal")}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="header-title">
+              <span className="icon">👤</span>
+              <h3>Personal Information</h3>
+            </div>
+            <div className="header-actions">
+              {activeSection === "all" && (
+                <button
+                  type="button"
+                  className="btn-section-focus"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection("personal");
+                  }}
+                  title="Focus on Personal Info"
+                >
+                  Focus 🔍
+                </button>
+              )}
+              <span className="toggle-indicator">
+                {activeSection === "all" && collapsedSections["personal"] ? "▼" : "▲"}
+              </span>
+            </div>
+          </div>
+
+          {(!collapsedSections["personal"] || activeSection === "personal") && (
+            <div className="form-card-body">
             <div className="form-row-2">
               <div className="form-group">
                 <label>Full Name *</label>
@@ -408,29 +628,48 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                 onChange={(e) => handlePersonalChange("summary", e.target.value)}
               />
             </div>
+
+            {renderTraversalFooter("personal")}
           </div>
         )}
       </div>
+      )}
 
       {/* 2. EXPERIENCE */}
-      <div className="form-card">
-        <div
-          className="form-card-header"
-          onClick={() => toggleSection("experience")}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="header-title">
-            <span className="icon">💼</span>
-            <h3>Experience ({data.experience.length})</h3>
+      {(activeSection === "all" || activeSection === "experience") && (
+        <div className="form-card" data-testid="section-card-experience">
+          <div
+            className="form-card-header"
+            onClick={() => toggleSection("experience")}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="header-title">
+              <span className="icon">💼</span>
+              <h3>Experience ({data.experience.length})</h3>
+            </div>
+            <div className="header-actions">
+              {activeSection === "all" && (
+                <button
+                  type="button"
+                  className="btn-section-focus"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection("experience");
+                  }}
+                  title="Focus on Experience"
+                >
+                  Focus 🔍
+                </button>
+              )}
+              <span className="toggle-indicator">
+                {activeSection === "all" && collapsedSections["experience"] ? "▼" : "▲"}
+              </span>
+            </div>
           </div>
-          <span className="toggle-indicator">
-            {collapsedSections["experience"] ? "▼" : "▲"}
-          </span>
-        </div>
 
-        {!collapsedSections["experience"] && (
-          <div className="form-card-body">
+          {(!collapsedSections["experience"] || activeSection === "experience") && (
+            <div className="form-card-body">
             {data.experience.map((exp, expIdx) => (
               <div key={exp.id} className="entry-card" data-testid={`experience-item-${expIdx}`}>
                 <div className="entry-header">
@@ -537,29 +776,48 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             >
               + Add Experience Entry
             </button>
+
+            {renderTraversalFooter("experience")}
           </div>
         )}
       </div>
+      )}
 
       {/* 3. EDUCATION */}
-      <div className="form-card">
-        <div
-          className="form-card-header"
-          onClick={() => toggleSection("education")}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="header-title">
-            <span className="icon">🎓</span>
-            <h3>Education ({data.education.length})</h3>
+      {(activeSection === "all" || activeSection === "education") && (
+        <div className="form-card" data-testid="section-card-education">
+          <div
+            className="form-card-header"
+            onClick={() => toggleSection("education")}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="header-title">
+              <span className="icon">🎓</span>
+              <h3>Education ({data.education.length})</h3>
+            </div>
+            <div className="header-actions">
+              {activeSection === "all" && (
+                <button
+                  type="button"
+                  className="btn-section-focus"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection("education");
+                  }}
+                  title="Focus on Education"
+                >
+                  Focus 🔍
+                </button>
+              )}
+              <span className="toggle-indicator">
+                {activeSection === "all" && collapsedSections["education"] ? "▼" : "▲"}
+              </span>
+            </div>
           </div>
-          <span className="toggle-indicator">
-            {collapsedSections["education"] ? "▼" : "▲"}
-          </span>
-        </div>
 
-        {!collapsedSections["education"] && (
-          <div className="form-card-body">
+          {(!collapsedSections["education"] || activeSection === "education") && (
+            <div className="form-card-body">
             {data.education.map((edu, eduIdx) => (
               <div key={edu.id} className="entry-card" data-testid={`education-item-${eduIdx}`}>
                 <div className="entry-header">
@@ -645,29 +903,48 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             >
               + Add Education Entry
             </button>
+
+            {renderTraversalFooter("education")}
           </div>
         )}
       </div>
+      )}
 
       {/* 4. PROJECTS */}
-      <div className="form-card">
-        <div
-          className="form-card-header"
-          onClick={() => toggleSection("projects")}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="header-title">
-            <span className="icon">🚀</span>
-            <h3>Projects ({data.projects.length})</h3>
+      {(activeSection === "all" || activeSection === "projects") && (
+        <div className="form-card" data-testid="section-card-projects">
+          <div
+            className="form-card-header"
+            onClick={() => toggleSection("projects")}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="header-title">
+              <span className="icon">🚀</span>
+              <h3>Projects ({data.projects.length})</h3>
+            </div>
+            <div className="header-actions">
+              {activeSection === "all" && (
+                <button
+                  type="button"
+                  className="btn-section-focus"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection("projects");
+                  }}
+                  title="Focus on Projects"
+                >
+                  Focus 🔍
+                </button>
+              )}
+              <span className="toggle-indicator">
+                {activeSection === "all" && collapsedSections["projects"] ? "▼" : "▲"}
+              </span>
+            </div>
           </div>
-          <span className="toggle-indicator">
-            {collapsedSections["projects"] ? "▼" : "▲"}
-          </span>
-        </div>
 
-        {!collapsedSections["projects"] && (
-          <div className="form-card-body">
+          {(!collapsedSections["projects"] || activeSection === "projects") && (
+            <div className="form-card-body">
             {data.projects.map((proj, pIdx) => (
               <div key={proj.id} className="entry-card" data-testid={`project-item-${pIdx}`}>
                 <div className="entry-header">
@@ -753,29 +1030,48 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             >
               + Add Project Entry
             </button>
+
+            {renderTraversalFooter("projects")}
           </div>
         )}
       </div>
+      )}
 
       {/* 5. SKILLS */}
-      <div className="form-card">
-        <div
-          className="form-card-header"
-          onClick={() => toggleSection("skills")}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="header-title">
-            <span className="icon">🛠️</span>
-            <h3>Skills & Technologies ({data.skills.length})</h3>
+      {(activeSection === "all" || activeSection === "skills") && (
+        <div className="form-card" data-testid="section-card-skills">
+          <div
+            className="form-card-header"
+            onClick={() => toggleSection("skills")}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="header-title">
+              <span className="icon">🛠️</span>
+              <h3>Skills & Technologies ({data.skills.length})</h3>
+            </div>
+            <div className="header-actions">
+              {activeSection === "all" && (
+                <button
+                  type="button"
+                  className="btn-section-focus"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection("skills");
+                  }}
+                  title="Focus on Skills"
+                >
+                  Focus 🔍
+                </button>
+              )}
+              <span className="toggle-indicator">
+                {activeSection === "all" && collapsedSections["skills"] ? "▼" : "▲"}
+              </span>
+            </div>
           </div>
-          <span className="toggle-indicator">
-            {collapsedSections["skills"] ? "▼" : "▲"}
-          </span>
-        </div>
 
-        {!collapsedSections["skills"] && (
-          <div className="form-card-body">
+          {(!collapsedSections["skills"] || activeSection === "skills") && (
+            <div className="form-card-body">
             {data.skills.map((skill, sIdx) => (
               <div key={skill.id} className="entry-card" data-testid={`skill-item-${sIdx}`}>
                 <div className="entry-header">
@@ -821,13 +1117,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             >
               + Add Skill Category
             </button>
+
+            {renderTraversalFooter("skills")}
           </div>
         )}
       </div>
+      )}
 
       {/* 6. TEMPLATE CUSTOM FIELDS & SECTIONS */}
-      {(customFields.length > 0 || (data.customSections && data.customSections.length > 0)) && (
-        <div className="form-card">
+      {hasCustom && (activeSection === "all" || activeSection === "custom") && (
+        <div className="form-card" data-testid="section-card-custom">
           <div
             className="form-card-header"
             onClick={() => toggleSection("custom")}
@@ -838,12 +1137,27 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               <span className="icon">✨</span>
               <h3>Template Custom Fields & Sections</h3>
             </div>
-            <span className="toggle-indicator">
-              {collapsedSections["custom"] ? "▼" : "▲"}
-            </span>
+            <div className="header-actions">
+              {activeSection === "all" && (
+                <button
+                  type="button"
+                  className="btn-section-focus"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection("custom");
+                  }}
+                  title="Focus on Custom Fields"
+                >
+                  Focus 🔍
+                </button>
+              )}
+              <span className="toggle-indicator">
+                {activeSection === "all" && collapsedSections["custom"] ? "▼" : "▲"}
+              </span>
+            </div>
           </div>
 
-          {!collapsedSections["custom"] && (
+          {(!collapsedSections["custom"] || activeSection === "custom") && (
             <div className="form-card-body">
               {customFields.map((field) => (
                 <div key={field.key} className="form-group">
@@ -902,6 +1216,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               >
                 + Add Custom Section
               </button>
+
+              {renderTraversalFooter("custom")}
             </div>
           )}
         </div>

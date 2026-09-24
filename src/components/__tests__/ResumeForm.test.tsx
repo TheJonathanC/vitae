@@ -105,4 +105,62 @@ describe("ResumeForm component", () => {
 
     expect(screen.getByText("Security Clearance")).toBeInTheDocument();
   });
+
+  it("renders section navigation tabs with count badges and allows switching sections", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    // Verify all section tabs are present
+    expect(screen.getByTestId("section-tab-all")).toBeInTheDocument();
+    expect(screen.getByTestId("section-tab-personal")).toBeInTheDocument();
+    expect(screen.getByTestId("section-tab-experience")).toBeInTheDocument();
+    expect(screen.getByTestId("section-tab-education")).toBeInTheDocument();
+    expect(screen.getByTestId("section-tab-projects")).toBeInTheDocument();
+    expect(screen.getByTestId("section-tab-skills")).toBeInTheDocument();
+
+    // Default tab should be 'all'
+    expect(screen.getByTestId("section-tab-all")).toHaveClass("active");
+    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
+    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
+
+    // Switch to experience tab
+    fireEvent.click(screen.getByTestId("section-tab-experience"));
+    expect(screen.getByTestId("section-tab-experience")).toHaveClass("active");
+    expect(screen.getByTestId("section-tab-all")).not.toHaveClass("active");
+
+    // Only Experience section should be visible
+    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
+    expect(screen.queryByTestId("section-card-personal")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("section-card-education")).not.toBeInTheDocument();
+  });
+
+  it("supports sequential traversal via Previous and Next buttons", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    // Switch to Personal section
+    fireEvent.click(screen.getByTestId("section-tab-personal"));
+    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
+    expect(screen.queryByTestId("section-card-experience")).not.toBeInTheDocument();
+
+    // Click Next to go to Experience
+    const nextBtn = screen.getByTestId("btn-nav-next-personal");
+    fireEvent.click(nextBtn);
+
+    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
+    expect(screen.queryByTestId("section-card-personal")).not.toBeInTheDocument();
+
+    // Click Previous to return to Personal
+    const prevBtn = screen.getByTestId("btn-nav-prev-experience");
+    fireEvent.click(prevBtn);
+
+    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
+    expect(screen.queryByTestId("section-card-experience")).not.toBeInTheDocument();
+
+    // Click All Sections tab to view everything again
+    fireEvent.click(screen.getByTestId("section-tab-all"));
+    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
+    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
+    expect(screen.getByTestId("section-card-education")).toBeInTheDocument();
+  });
 });
