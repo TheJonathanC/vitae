@@ -582,6 +582,16 @@ fn export_pdf(app: tauri::AppHandle, id: String, destination: String) -> Result<
 }
 
 #[tauri::command]
+fn read_pdf_bytes(path: String) -> Result<Vec<u8>, String> {
+    let clean_path = path.trim().split('?').next().unwrap_or(&path);
+    let path_obj = std::path::Path::new(clean_path);
+    if !path_obj.exists() {
+        return Err(format!("PDF file not found at: {}", clean_path));
+    }
+    fs::read(path_obj).map_err(|e| format!("Failed to read PDF file: {}", e))
+}
+
+#[tauri::command]
 fn check_latex_installed() -> Result<bool, String> {
     let binary = find_pdflatex_binary();
     let mut cmd = create_silent_command(&binary);
@@ -715,6 +725,7 @@ fn main() {
             delete_document,
             compile_latex,
             export_pdf,
+            read_pdf_bytes,
             check_latex_installed,
             check_update_custom,
             install_update_custom,
@@ -857,6 +868,23 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         assert!(check_needs_rerun("Table widths have changed. Rerun LaTeX."));
         assert!(check_needs_rerun("Package rerunfilecheck Warning: Check checksum! Rerun to get correct checksum!"));
         assert!(!check_needs_rerun("Output written on test.pdf (1 page, 26032 bytes)."));
+    }
+
+    #[test]
+    fn test_read_pdf_bytes_nonexistent() {
+        let result = read_pdf_bytes("nonexistent_path_xyz_1234.pdf".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_pdf_bytes_success() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("vitae_test_sample.pdf");
+        std::fs::write(&test_file, b"%PDF-1.4 sample content").unwrap();
+        let result = read_pdf_bytes(test_file.to_str().unwrap().to_string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), b"%PDF-1.4 sample content");
+        let _ = std::fs::remove_file(test_file);
     }
 }
 
