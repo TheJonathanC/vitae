@@ -32,6 +32,7 @@ import {
   IconDownload,
   IconSettings,
   IconCode,
+  IconSidebar,
 } from "./components/Icons";
 import "./App.css";
 
@@ -62,6 +63,14 @@ function App() {
   const [updateChannel, setUpdateChannel] = useState<string>(() => {
     return localStorage.getItem("vitae_channel") || "beta";
   });
+
+  // Draggable Split Pane State
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    const saved = localStorage.getItem("vitae_split_ratio");
+    return saved ? Math.min(Math.max(parseFloat(saved), 20), 80) : 50;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<{
@@ -543,6 +552,47 @@ function App() {
     }
   };
 
+  const handleMouseDownResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const newRatio = ((e.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.min(Math.max(newRatio, 20), 80);
+      setSplitRatio(clamped);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      localStorage.setItem("vitae_split_ratio", splitRatio.toString());
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, splitRatio]);
+
+  // Escape key closes the sidebar drawer if open
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !sidebarCollapsed) {
+        setSidebarCollapsed(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarCollapsed]);
+
   return (
     <div className="app">
       <UpdateChecker channel={updateChannel} />
@@ -581,9 +631,29 @@ function App() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
+      {!sidebarCollapsed && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-hidden="true"
+        />
+      )}
       <div className="main-content">
         <div className="toolbar">
-          <h1>{currentDocument?.title || "Vitae Resume Builder"}</h1>
+          <div className="toolbar-left">
+            <button
+              type="button"
+              className={`btn-toolbar-sidebar ${!sidebarCollapsed ? "active" : ""}`}
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? "Open documents drawer" : "Close documents drawer"}
+              aria-label={sidebarCollapsed ? "Open documents drawer" : "Close documents drawer"}
+              data-testid="btn-toggle-sidebar"
+            >
+              <IconSidebar size={15} />
+              <span>Docs</span>
+            </button>
+            <h1>{currentDocument?.title || "Vitae Resume Builder"}</h1>
+          </div>
           <div className="toolbar-actions">
             <div className="layout-toggle-group" role="group" aria-label="Layout view mode">
               <button
@@ -689,10 +759,17 @@ function App() {
           </div>
         )}
 
-        <div className={`editor-container view-${viewMode}`}>
+        <div
+          ref={containerRef}
+          className={`editor-container view-${viewMode} ${isResizing ? "is-resizing" : ""}`}
+        >
           <div
             className={`editor-pane ${viewMode === "editor" ? "full-width" : ""}`}
-            style={{ display: viewMode === "preview" ? "none" : "flex" }}
+            style={{
+              display: viewMode === "preview" ? "none" : "flex",
+              width: viewMode === "split" ? `${splitRatio}%` : undefined,
+              flex: viewMode === "split" ? "none" : undefined,
+            }}
           >
             <div className="editor-tabs-bar">
               <div className="editor-tabs-left">
@@ -733,9 +810,30 @@ function App() {
               />
             )}
           </div>
+
+          {viewMode === "split" && (
+            <div
+              className={`split-resizer ${isResizing ? "resizing" : ""}`}
+              onMouseDown={handleMouseDownResize}
+              onDoubleClick={() => {
+                setSplitRatio(50);
+                localStorage.setItem("vitae_split_ratio", "50");
+              }}
+              title="Drag to resize panes (double click to reset)"
+              role="separator"
+              aria-orientation="vertical"
+            >
+              <div className="resizer-handle" />
+            </div>
+          )}
+
           <div
             className={`preview-pane ${viewMode === "preview" ? "full-width" : ""}`}
-            style={{ display: viewMode === "editor" ? "none" : "flex" }}
+            style={{
+              display: viewMode === "editor" ? "none" : "flex",
+              width: viewMode === "split" ? `${100 - splitRatio}%` : undefined,
+              flex: viewMode === "split" ? "none" : undefined,
+            }}
           >
             <PDFViewer pdfPath={pdfPath} />
           </div>
