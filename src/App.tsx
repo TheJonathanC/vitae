@@ -21,6 +21,18 @@ import {
   renderTemplate,
   extractFieldsFromTemplate,
 } from "./utils/templateEngine";
+import {
+  IconSplit,
+  IconForm,
+  IconEye,
+  IconPalette,
+  IconAuto,
+  IconCompile,
+  IconTerminal,
+  IconDownload,
+  IconSettings,
+  IconCode,
+} from "./components/Icons";
 import "./App.css";
 
 function App() {
@@ -345,9 +357,9 @@ function App() {
       }
 
       if (result.success) {
-        log += `✓ PDF generated successfully at ${result.pdf_path}`;
+        log += `[SUCCESS] PDF generated successfully at ${result.pdf_path}`;
       } else {
-        log += "✗ Compilation failed";
+        log += "[FAILED] Compilation failed";
       }
 
       setCompilationLog(log);
@@ -578,28 +590,31 @@ function App() {
                 type="button"
                 className={`btn-layout-toggle ${viewMode === "split" ? "active" : ""}`}
                 onClick={() => setViewMode("split")}
-                title="Split View: Form & Preview side-by-side"
+                title="Split View: Form & Preview"
                 data-testid="btn-toggle-split"
               >
-                ◫ Split
+                <IconSplit size={14} />
+                <span>Split</span>
               </button>
               <button
                 type="button"
                 className={`btn-layout-toggle ${viewMode === "editor" ? "active" : ""}`}
                 onClick={() => setViewMode("editor")}
-                title="Form Only: Full width for comfortable editing without squishing"
+                title="Form Only (Full width)"
                 data-testid="btn-toggle-editor"
               >
-                📄 Form Only
+                <IconForm size={14} />
+                <span>Form</span>
               </button>
               <button
                 type="button"
                 className={`btn-layout-toggle ${viewMode === "preview" ? "active" : ""}`}
                 onClick={() => setViewMode("preview")}
-                title="Preview Only: Full width PDF preview"
+                title="Preview Only"
                 data-testid="btn-toggle-preview"
               >
-                👁️ Preview Only
+                <IconEye size={14} />
+                <span>Preview</span>
               </button>
             </div>
             {!latexInstalled && (
@@ -608,7 +623,8 @@ function App() {
                 className="btn-setup"
                 title="LaTeX not detected"
               >
-                ⚙️ Setup LaTeX
+                <IconSettings size={14} />
+                <span>Setup LaTeX</span>
               </button>
             )}
             <button
@@ -617,22 +633,25 @@ function App() {
               title="Browse, change, or import templates"
               data-testid="btn-open-templates"
             >
-              🎨 Templates ({templates.length})
+              <IconPalette size={14} />
+              <span>Templates ({templates.length})</span>
             </button>
             <button
               onClick={() => setAutoCompile(!autoCompile)}
               className={`btn-auto-compile ${autoCompile ? "active" : ""}`}
               disabled={!currentDocument}
-              title="Auto-compile on change (2s delay)"
+              title="Auto-compile on change"
             >
-              {autoCompile ? "🔄 Auto" : "⏸️ Auto"}
+              <IconAuto size={14} />
+              <span>Auto</span>
             </button>
             <button
               onClick={compileLatex}
               disabled={!currentDocument || isCompiling}
               className="btn-compile"
             >
-              {isCompiling ? "Compiling..." : "Compile"}
+              <IconCompile size={14} />
+              <span>{isCompiling ? "Compiling..." : "Compile"}</span>
             </button>
             <button
               onClick={() => setShowLog(!showLog)}
@@ -640,21 +659,25 @@ function App() {
               className="btn-log"
               title="View compilation log"
             >
-              {showLog ? "Hide Log" : "View Log"}
+              <IconTerminal size={14} />
+              <span>Log</span>
             </button>
             <button
               onClick={exportPDF}
               disabled={!pdfPath}
               className="btn-export"
             >
-              Export PDF
+              <IconDownload size={14} />
+              <span>Export PDF</span>
             </button>
             <button
               onClick={() => setShowSettings(true)}
               className="btn-settings"
               title="Settings & Update Channel"
+              data-testid="btn-settings"
             >
-              ⚙️ Settings
+              <IconSettings size={14} />
+              <span>Settings</span>
             </button>
           </div>
         </div>
@@ -677,11 +700,10 @@ function App() {
                   className={`editor-tab ${editorMode === "form" ? "active" : ""}`}
                   onClick={() => setEditorMode("form")}
                   data-testid="tab-form-view"
-                  title="Fill structured resume fields with live PDF preview"
+                  title="Structured visual form"
                 >
-                  <span className="tab-icon">📝</span>
+                  <IconForm size={14} className="tab-icon" />
                   <span className="tab-title">Visual Form</span>
-                  <span className="tab-badge">Default</span>
                 </button>
                 <button
                   className={`editor-tab ${editorMode === "code" ? "active" : ""}`}
@@ -689,38 +711,8 @@ function App() {
                   data-testid="tab-code-view"
                   title="Direct LaTeX source editor"
                 >
-                  <span className="tab-icon">💻</span>
+                  <IconCode size={14} className="tab-icon" />
                   <span className="tab-title">LaTeX Source</span>
-                </button>
-              </div>
-
-              <div className="view-mode-controls" role="group" aria-label="Layout view mode">
-                <button
-                  type="button"
-                  className={`btn-view-mode ${viewMode === "split" ? "active" : ""}`}
-                  onClick={() => setViewMode("split")}
-                  title="Split View: Form & Preview"
-                  data-testid="btn-view-split"
-                >
-                  ◫ Split
-                </button>
-                <button
-                  type="button"
-                  className={`btn-view-mode ${viewMode === "editor" ? "active" : ""}`}
-                  onClick={() => setViewMode("editor")}
-                  title="Expand Form to full width"
-                  data-testid="btn-view-editor"
-                >
-                  📄 Full Form
-                </button>
-                <button
-                  type="button"
-                  className={`btn-view-mode ${viewMode === "preview" ? "active" : ""}`}
-                  onClick={() => setViewMode("preview")}
-                  title="Expand PDF Preview to full width"
-                  data-testid="btn-view-preview"
-                >
-                  👁️ Full PDF
                 </button>
               </div>
             </div>
@@ -745,26 +737,6 @@ function App() {
             className={`preview-pane ${viewMode === "preview" ? "full-width" : ""}`}
             style={{ display: viewMode === "editor" ? "none" : "flex" }}
           >
-            {viewMode === "preview" && (
-              <div className="preview-top-bar">
-                <button
-                  type="button"
-                  className="btn-return-view"
-                  onClick={() => setViewMode("split")}
-                  title="Return to side-by-side split view"
-                >
-                  ◫ Return to Split View
-                </button>
-                <button
-                  type="button"
-                  className="btn-return-view"
-                  onClick={() => setViewMode("editor")}
-                  title="Return to Form Editor"
-                >
-                  📝 Return to Form
-                </button>
-              </div>
-            )}
             <PDFViewer pdfPath={pdfPath} />
           </div>
         </div>

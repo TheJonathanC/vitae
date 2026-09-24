@@ -108,7 +108,7 @@ describe("App Integration Tests", () => {
       expect(screen.getByRole("heading", { level: 1, name: "Resume 2026" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("+ New"));
+    fireEvent.click(screen.getByRole("button", { name: /new/i }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_document", {
@@ -244,7 +244,7 @@ describe("App Integration Tests", () => {
       expect(screen.getByRole("heading", { level: 1, name: "Resume 2026" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText(/⚙️ Settings/i));
+    fireEvent.click(screen.getByTestId("btn-settings"));
 
     await waitFor(() => {
       expect(screen.getByText("Release Channel")).toBeInTheDocument();

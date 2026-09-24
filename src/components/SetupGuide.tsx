@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/api/shell";
+import { IconCheck } from "./Icons";
 
 interface SetupGuideProps {
   onClose: () => void;
@@ -168,18 +169,18 @@ function SetupGuide({ onClose }: SetupGuideProps) {
             Once you've installed the LaTeX distribution and restarted Vitae,
             you'll be able to:
           </p>
-          <ul style={{ marginLeft: "20px", marginBottom: "16px" }}>
-            <li style={{ marginBottom: "8px" }}>
-              ✅ Create and edit LaTeX documents
+          <ul style={{ listStyle: "none", padding: 0, marginBottom: "16px" }}>
+            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <IconCheck size={14} /> <span>Create and edit LaTeX documents</span>
             </li>
-            <li style={{ marginBottom: "8px" }}>
-              ✅ Compile to PDF with live preview
+            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <IconCheck size={14} /> <span>Compile to PDF with live preview</span>
             </li>
-            <li style={{ marginBottom: "8px" }}>
-              ✅ Export PDFs to share with others
+            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <IconCheck size={14} /> <span>Export PDFs to share with others</span>
             </li>
-            <li style={{ marginBottom: "8px" }}>
-              ✅ Work completely offline
+            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <IconCheck size={14} /> <span>Work completely offline</span>
             </li>
           </ul>
           <p style={{ color: "#858585" }}>

@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/api/shell";
 import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
+import { IconSettings, IconX } from "./Icons";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -158,9 +159,12 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
     <div className="setup-overlay" data-testid="settings-modal-overlay">
       <div className="setup-modal settings-modal">
         <div className="setup-header">
-          <h2>⚙️ Settings</h2>
-          <button className="settings-close-btn" onClick={onClose}>
-            ×
+          <h2>
+            <IconSettings size={18} />
+            <span>Settings</span>
+          </h2>
+          <button className="settings-close-btn" onClick={onClose} aria-label="Close">
+            <IconX size={16} />
           </button>
         </div>
 

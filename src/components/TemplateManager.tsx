@@ -2,6 +2,16 @@ import React, { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { Template, ResumeData } from "../types";
 import { convertRawLatexToTemplate, extractFieldsFromTemplate } from "../utils/templateEngine";
+import {
+  IconLayers,
+  IconUpload,
+  IconPlus,
+  IconTrash,
+  IconFile,
+  IconSearch,
+  IconX,
+  IconCheck,
+} from "./Icons";
 
 interface TemplateManagerProps {
   templates: Template[];
@@ -144,13 +154,15 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
             className={`tab-btn ${activeTab === "gallery" ? "active" : ""}`}
             onClick={() => setActiveTab("gallery")}
           >
-            📚 Template Gallery ({templates.length})
+            <IconLayers size={14} />
+            <span>Gallery ({templates.length})</span>
           </button>
           <button
             className={`tab-btn ${activeTab === "import" ? "active" : ""}`}
             onClick={() => setActiveTab("import")}
           >
-            📥 Import Custom Template (.tex)
+            <IconUpload size={14} />
+            <span>Import Custom Template</span>
           </button>
         </div>
 
@@ -165,7 +177,8 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                 className="btn-primary"
                 onClick={() => fileInputRef.current?.click()}
               >
-                + Upload .tex Template
+                <IconPlus size={14} />
+                <span>Upload .tex</span>
               </button>
             </div>
 
@@ -211,7 +224,14 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                           onClose();
                         }}
                       >
-                        {isSelected ? "✓ Active Template" : "Use This Template"}
+                        {isSelected ? (
+                          <>
+                            <IconCheck size={14} />
+                            <span>Active Template</span>
+                          </>
+                        ) : (
+                          <span>Use This Template</span>
+                        )}
                       </button>
 
                       <button
@@ -227,8 +247,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                           className="btn-danger-icon"
                           onClick={() => handleDeleteTemplate(tpl.id, tpl.name)}
                           title="Delete custom template"
+                          aria-label="Delete template"
                         >
-                          🗑️
+                          <IconTrash size={14} />
                         </button>
                       )}
                     </div>
@@ -243,7 +264,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
         {activeTab === "import" && (
           <div className="template-import-view">
             <div className="import-dropzone">
-              <span className="dropzone-icon">📄</span>
+              <IconFile size={36} className="dropzone-icon" />
               <h3>Upload Your LaTeX Resume Template</h3>
               <p>
                 Upload any <code>.tex</code> template file. Vitae automatically detects its
@@ -254,7 +275,8 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                 className="btn-primary"
                 onClick={() => fileInputRef.current?.click()}
               >
-                Choose .tex File
+                <IconUpload size={14} />
+                <span>Choose .tex File</span>
               </button>
             </div>
 
@@ -282,7 +304,10 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
 
                 {importExtractedData && (
                   <div className="extracted-notice">
-                    <h4>🔍 Extracted Resume Structure:</h4>
+                    <h4>
+                      <IconSearch size={14} />
+                      <span>Extracted Resume Structure</span>
+                    </h4>
                     <ul>
                       {importExtractedData.personal?.name && (
                         <li>
@@ -352,8 +377,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                 <button
                   className="btn-close"
                   onClick={() => setViewingTemplate(null)}
+                  aria-label="Close"
                 >
-                  ×
+                  <IconX size={16} />
                 </button>
               </div>
               <pre className="template-source-preview">{viewingTemplate.content}</pre>

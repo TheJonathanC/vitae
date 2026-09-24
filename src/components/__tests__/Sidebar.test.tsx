@@ -37,7 +37,7 @@ describe("Sidebar component", () => {
     expect(screen.getByText("Document 2")).toBeInTheDocument();
   });
 
-  it("calls onCreateDocument when '+ New' is clicked", () => {
+  it("calls onCreateDocument when 'New' is clicked", () => {
     const handleCreate = vi.fn();
     render(
       <Sidebar
@@ -51,7 +51,7 @@ describe("Sidebar component", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("+ New"));
+    fireEvent.click(screen.getByRole("button", { name: /new/i }));
     expect(handleCreate).toHaveBeenCalledTimes(1);
   });
 
@@ -87,7 +87,7 @@ describe("Sidebar component", () => {
       />
     );
 
-    const deleteButtons = screen.getAllByText("🗑️");
+    const deleteButtons = screen.getAllByTitle("Delete document");
     fireEvent.click(deleteButtons[0]);
     expect(handleDelete).toHaveBeenCalledWith("doc-1");
   });
@@ -122,7 +122,7 @@ describe("Sidebar component", () => {
       />
     );
 
-    const expandBtn = screen.getByText("▶");
+    const expandBtn = screen.getByRole("button", { name: /expand sidebar/i });
     fireEvent.click(expandBtn);
     expect(handleToggle).toHaveBeenCalledTimes(1);
   });

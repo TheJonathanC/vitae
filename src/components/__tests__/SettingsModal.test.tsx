@@ -171,7 +171,7 @@ describe("SettingsModal component", () => {
     fireEvent.click(screen.getByText("Done"));
     expect(handleClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByText("×"));
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
     expect(handleClose).toHaveBeenCalledTimes(2);
   });
 });

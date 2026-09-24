@@ -8,6 +8,24 @@ import {
   ResumeCustomSection,
   ExtractedTemplateField,
 } from "../types";
+import {
+  IconUser,
+  IconBriefcase,
+  IconGraduationCap,
+  IconFolder,
+  IconWrench,
+  IconSparkles,
+  IconLayers,
+  IconPlus,
+  IconTrash,
+  IconChevronDown,
+  IconChevronUp,
+  IconChevronLeft,
+  IconChevronRight,
+  IconCheck,
+  IconX,
+  IconPalette,
+} from "./Icons";
 
 export type ResumeSectionId =
   | "all"
@@ -50,13 +68,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     sequentialSections.push("custom");
   }
 
-  const SECTION_METADATA: Record<string, { label: string; icon: string }> = {
-    personal: { label: "Personal Info", icon: "👤" },
-    experience: { label: "Experience", icon: "💼" },
-    education: { label: "Education", icon: "🎓" },
-    projects: { label: "Projects", icon: "🚀" },
-    skills: { label: "Skills", icon: "🛠️" },
-    custom: { label: "Custom Fields", icon: "✨" },
+  const SECTION_METADATA: Record<
+    string,
+    { label: string; icon: React.FC<{ size?: number; className?: string }> }
+  > = {
+    personal: { label: "Personal Info", icon: IconUser },
+    experience: { label: "Experience", icon: IconBriefcase },
+    education: { label: "Education", icon: IconGraduationCap },
+    projects: { label: "Projects", icon: IconFolder },
+    skills: { label: "Skills", icon: IconWrench },
+    custom: { label: "Custom Fields", icon: IconSparkles },
   };
 
   const getAdjacentSections = (current: string) => {
@@ -79,7 +100,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid={`btn-nav-prev-${sectionKey}`}
             title={`Go to previous section: ${SECTION_METADATA[prev]?.label}`}
           >
-            ← {SECTION_METADATA[prev]?.icon} {SECTION_METADATA[prev]?.label}
+            <IconChevronLeft size={14} />
+            <span>{SECTION_METADATA[prev]?.label}</span>
           </button>
         ) : (
           <button
@@ -88,18 +110,10 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             onClick={() => setActiveSection("all")}
             title="View all sections at once"
           >
-            📑 View All Sections
+            <IconLayers size={14} />
+            <span>All Sections</span>
           </button>
         )}
-
-        <button
-          type="button"
-          className="btn-traversal btn-traversal-center"
-          onClick={() => setActiveSection(activeSection === "all" ? sectionKey : "all")}
-          title={activeSection === "all" ? "Focus on this section only" : "View all sections"}
-        >
-          {activeSection === "all" ? `🔍 Focus ${SECTION_METADATA[sectionKey]?.label}` : "📑 View All Sections"}
-        </button>
 
         {next ? (
           <button
@@ -109,7 +123,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid={`btn-nav-next-${sectionKey}`}
             title={`Go to next section: ${SECTION_METADATA[next]?.label}`}
           >
-            {SECTION_METADATA[next]?.icon} {SECTION_METADATA[next]?.label} →
+            <span>{SECTION_METADATA[next]?.label}</span>
+            <IconChevronRight size={14} />
           </button>
         ) : (
           <button
@@ -118,7 +133,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             onClick={() => setActiveSection("all")}
             title="Done traversing, view all sections"
           >
-            ✓ Finish & View All
+            <IconCheck size={14} />
+            <span>Finish & View All</span>
           </button>
         )}
       </div>
@@ -382,7 +398,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {/* Template Header Banner */}
       <div className="form-template-banner">
         <div className="form-template-info">
-          <span className="template-label">Active Template:</span>
+          <span className="template-label">Active Template</span>
           <span className="template-badge">{templateName || "Modern Professional"}</span>
         </div>
         {onChangeTemplateClick && (
@@ -392,7 +408,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             onClick={onChangeTemplateClick}
             title="Browse or import templates"
           >
-            🎨 Change / Import Template
+            <IconPalette size={14} />
+            <span>Change Template</span>
           </button>
         )}
       </div>
@@ -409,8 +426,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-all"
             title="Show all resume sections at once"
           >
-            <span className="tab-icon">📑</span>
-            <span className="tab-label">All Sections</span>
+            <span className="tab-icon"><IconLayers size={14} /></span>
+            <span className="tab-label">All</span>
           </button>
 
           <button
@@ -422,7 +439,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-personal"
             title="Personal information & contact details"
           >
-            <span className="tab-icon">👤</span>
+            <span className="tab-icon"><IconUser size={14} /></span>
             <span className="tab-label">Personal</span>
           </button>
 
@@ -435,7 +452,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-experience"
             title="Work experience and employment history"
           >
-            <span className="tab-icon">💼</span>
+            <span className="tab-icon"><IconBriefcase size={14} /></span>
             <span className="tab-label">Experience</span>
             <span className="section-badge">{data.experience.length}</span>
           </button>
@@ -449,7 +466,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-education"
             title="Degrees, schools, and credentials"
           >
-            <span className="tab-icon">🎓</span>
+            <span className="tab-icon"><IconGraduationCap size={14} /></span>
             <span className="tab-label">Education</span>
             <span className="section-badge">{data.education.length}</span>
           </button>
@@ -463,7 +480,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-projects"
             title="Side projects and portfolio items"
           >
-            <span className="tab-icon">🚀</span>
+            <span className="tab-icon"><IconFolder size={14} /></span>
             <span className="tab-label">Projects</span>
             <span className="section-badge">{data.projects.length}</span>
           </button>
@@ -477,7 +494,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-skills"
             title="Skills and technologies"
           >
-            <span className="tab-icon">🛠️</span>
+            <span className="tab-icon"><IconWrench size={14} /></span>
             <span className="tab-label">Skills</span>
             <span className="section-badge">{data.skills.length}</span>
           </button>
@@ -492,7 +509,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               data-testid="section-tab-custom"
               title="Template custom variables and extra sections"
             >
-              <span className="tab-icon">✨</span>
+              <span className="tab-icon"><IconSparkles size={14} /></span>
               <span className="tab-label">Custom</span>
               <span className="section-badge">
                 {(data.customSections?.length || 0) + customFields.length}
@@ -512,25 +529,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             tabIndex={0}
           >
             <div className="header-title">
-              <span className="icon">👤</span>
+              <span className="icon"><IconUser size={16} /></span>
               <h3>Personal Information</h3>
             </div>
             <div className="header-actions">
-              {activeSection === "all" && (
-                <button
-                  type="button"
-                  className="btn-section-focus"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection("personal");
-                  }}
-                  title="Focus on Personal Info"
-                >
-                  Focus 🔍
-                </button>
-              )}
               <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["personal"] ? "▼" : "▲"}
+                {activeSection === "all" && collapsedSections["personal"] ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
               </span>
             </div>
           </div>
@@ -645,25 +653,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             tabIndex={0}
           >
             <div className="header-title">
-              <span className="icon">💼</span>
+              <span className="icon"><IconBriefcase size={16} /></span>
               <h3>Experience ({data.experience.length})</h3>
             </div>
             <div className="header-actions">
-              {activeSection === "all" && (
-                <button
-                  type="button"
-                  className="btn-section-focus"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection("experience");
-                  }}
-                  title="Focus on Experience"
-                >
-                  Focus 🔍
-                </button>
-              )}
               <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["experience"] ? "▼" : "▲"}
+                {activeSection === "all" && collapsedSections["experience"] ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
               </span>
             </div>
           </div>
@@ -680,7 +679,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     onClick={() => handleRemoveExperience(exp.id)}
                     title="Delete experience entry"
                   >
-                    🗑️ Remove
+                    <IconTrash size={13} />
+                    <span>Remove</span>
                   </button>
                 </div>
 
@@ -753,7 +753,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         onClick={() => handleRemoveExpBullet(exp.id, bIdx)}
                         title="Remove bullet"
                       >
-                        ×
+                        <IconX size={13} />
                       </button>
                     </div>
                   ))}
@@ -762,7 +762,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     className="btn-add-bullet"
                     onClick={() => handleAddExpBullet(exp.id)}
                   >
-                    + Add Bullet
+                    <IconPlus size={13} />
+                    <span>Add Bullet</span>
                   </button>
                 </div>
               </div>
@@ -774,7 +775,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               onClick={handleAddExperience}
               data-testid="btn-add-experience"
             >
-              + Add Experience Entry
+              <IconPlus size={14} />
+              <span>Add Experience Entry</span>
             </button>
 
             {renderTraversalFooter("experience")}
@@ -793,25 +795,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             tabIndex={0}
           >
             <div className="header-title">
-              <span className="icon">🎓</span>
+              <span className="icon"><IconGraduationCap size={16} /></span>
               <h3>Education ({data.education.length})</h3>
             </div>
             <div className="header-actions">
-              {activeSection === "all" && (
-                <button
-                  type="button"
-                  className="btn-section-focus"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection("education");
-                  }}
-                  title="Focus on Education"
-                >
-                  Focus 🔍
-                </button>
-              )}
               <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["education"] ? "▼" : "▲"}
+                {activeSection === "all" && collapsedSections["education"] ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
               </span>
             </div>
           </div>
@@ -828,7 +821,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     onClick={() => handleRemoveEducation(edu.id)}
                     title="Delete education entry"
                   >
-                    🗑️ Remove
+                    <IconTrash size={13} />
+                    <span>Remove</span>
                   </button>
                 </div>
 
@@ -901,7 +895,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               onClick={handleAddEducation}
               data-testid="btn-add-education"
             >
-              + Add Education Entry
+              <IconPlus size={14} />
+              <span>Add Education Entry</span>
             </button>
 
             {renderTraversalFooter("education")}
@@ -920,25 +915,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             tabIndex={0}
           >
             <div className="header-title">
-              <span className="icon">🚀</span>
+              <span className="icon"><IconFolder size={16} /></span>
               <h3>Projects ({data.projects.length})</h3>
             </div>
             <div className="header-actions">
-              {activeSection === "all" && (
-                <button
-                  type="button"
-                  className="btn-section-focus"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection("projects");
-                  }}
-                  title="Focus on Projects"
-                >
-                  Focus 🔍
-                </button>
-              )}
               <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["projects"] ? "▼" : "▲"}
+                {activeSection === "all" && collapsedSections["projects"] ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
               </span>
             </div>
           </div>
@@ -955,7 +941,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     onClick={() => handleRemoveProject(proj.id)}
                     title="Delete project entry"
                   >
-                    🗑️ Remove
+                    <IconTrash size={13} />
+                    <span>Remove</span>
                   </button>
                 </div>
 
@@ -1007,7 +994,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         onClick={() => handleRemoveProjBullet(proj.id, bIdx)}
                         title="Remove bullet"
                       >
-                        ×
+                        <IconX size={13} />
                       </button>
                     </div>
                   ))}
@@ -1016,7 +1003,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     className="btn-add-bullet"
                     onClick={() => handleAddProjBullet(proj.id)}
                   >
-                    + Add Bullet
+                    <IconPlus size={13} />
+                    <span>Add Bullet</span>
                   </button>
                 </div>
               </div>
@@ -1028,7 +1016,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               onClick={handleAddProject}
               data-testid="btn-add-project"
             >
-              + Add Project Entry
+              <IconPlus size={14} />
+              <span>Add Project Entry</span>
             </button>
 
             {renderTraversalFooter("projects")}
@@ -1047,25 +1036,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             tabIndex={0}
           >
             <div className="header-title">
-              <span className="icon">🛠️</span>
+              <span className="icon"><IconWrench size={16} /></span>
               <h3>Skills & Technologies ({data.skills.length})</h3>
             </div>
             <div className="header-actions">
-              {activeSection === "all" && (
-                <button
-                  type="button"
-                  className="btn-section-focus"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection("skills");
-                  }}
-                  title="Focus on Skills"
-                >
-                  Focus 🔍
-                </button>
-              )}
               <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["skills"] ? "▼" : "▲"}
+                {activeSection === "all" && collapsedSections["skills"] ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
               </span>
             </div>
           </div>
@@ -1082,7 +1062,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     onClick={() => handleRemoveSkill(skill.id)}
                     title="Delete skill category"
                   >
-                    🗑️ Remove
+                    <IconTrash size={13} />
+                    <span>Remove</span>
                   </button>
                 </div>
 
@@ -1115,7 +1096,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               onClick={handleAddSkill}
               data-testid="btn-add-skill"
             >
-              + Add Skill Category
+              <IconPlus size={14} />
+              <span>Add Skill Category</span>
             </button>
 
             {renderTraversalFooter("skills")}
@@ -1134,25 +1116,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             tabIndex={0}
           >
             <div className="header-title">
-              <span className="icon">✨</span>
+              <span className="icon"><IconSparkles size={16} /></span>
               <h3>Template Custom Fields & Sections</h3>
             </div>
             <div className="header-actions">
-              {activeSection === "all" && (
-                <button
-                  type="button"
-                  className="btn-section-focus"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection("custom");
-                  }}
-                  title="Focus on Custom Fields"
-                >
-                  Focus 🔍
-                </button>
-              )}
               <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["custom"] ? "▼" : "▲"}
+                {activeSection === "all" && collapsedSections["custom"] ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
               </span>
             </div>
           </div>
@@ -1187,7 +1160,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       className="btn-danger-icon"
                       onClick={() => handleRemoveCustomSection(sec.id)}
                     >
-                      🗑️ Remove
+                      <IconTrash size={13} />
+                      <span>Remove</span>
                     </button>
                   </div>
                   <div className="form-group">
@@ -1214,7 +1188,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                 className="btn-add-entry"
                 onClick={handleAddCustomSection}
               >
-                + Add Custom Section
+                <IconPlus size={14} />
+                <span>Add Custom Section</span>
               </button>
 
               {renderTraversalFooter("custom")}

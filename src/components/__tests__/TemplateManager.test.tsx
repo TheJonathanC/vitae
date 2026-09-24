@@ -29,7 +29,7 @@ describe("TemplateManager component", () => {
     expect(screen.getByText("Modern Professional")).toBeInTheDocument();
     expect(screen.getByText("Classic Academic")).toBeInTheDocument();
     expect(screen.getByText("Minimalist Single-Column")).toBeInTheDocument();
-    expect(screen.getByText("✓ Active Template")).toBeInTheDocument();
+    expect(screen.getByText("Active Template")).toBeInTheDocument();
   });
 
   it("calls onSelectTemplate when another template is chosen", () => {

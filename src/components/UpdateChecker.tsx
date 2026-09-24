@@ -4,6 +4,7 @@ import { relaunch } from "@tauri-apps/api/process";
 import { open } from "@tauri-apps/api/shell";
 import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
+import { IconBell } from "./Icons";
 
 interface UpdateCheckerProps {
   channel?: string;
@@ -124,7 +125,7 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
   return (
     <div className="update-banner" data-testid="update-banner">
       <div className="update-content">
-        <span className="update-icon">🔔</span>
+        <IconBell size={18} className="update-icon" />
         <div className="update-text">
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <strong>Update Available!</strong>
