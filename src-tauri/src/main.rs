@@ -274,6 +274,8 @@ fn check_needs_rerun(output: &str) -> bool {
         || lower.contains("rerun to get citations correct")
         || lower.contains("rerun to get bibliographical references right")
         || lower.contains("rerun to get order correct")
+        || lower.contains("rerun to get")
+        || lower.contains("rerun to ")
         || lower.contains("rerun latex")
         || lower.contains("please rerun")
         || lower.contains("(re)run latex")
