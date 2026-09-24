@@ -1237,6 +1237,8 @@
 
 /* Resume Form Container */
 .resume-form-container {
+  flex: 1 1 0%;
+  min-height: 0;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1266,6 +1268,7 @@
   gap: 12px;
   box-sizing: border-box;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .form-template-info {
@@ -1321,6 +1324,7 @@
   background-color: #121214;
   padding: 2px 0 8px;
   margin-bottom: 2px;
+  flex-shrink: 0;
 }
 
 .section-tabs-bar {
@@ -1400,10 +1404,15 @@
   background-color: #18181b;
   border: 1px solid #27272a;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  width: 100%;
+  min-height: fit-content;
+  box-sizing: border-box;
 }
 
 .form-card:hover {
@@ -1414,15 +1423,22 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 13px 18px;
+  padding: 14px 20px;
   cursor: pointer;
   user-select: none;
   background-color: #1c1c20;
   border-bottom: 1px solid #27272a;
   transition: background-color 0.15s ease;
+  min-height: 50px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
-.form-card-header:hover {
+.form-card-header.no-collapse {
+  cursor: default;
+}
+
+.form-card-header:hover:not(.no-collapse) {
   background-color: #222227;
 }
 
@@ -1440,7 +1456,7 @@
 
 .header-title h3 {
   margin: 0;
-  font-size: 0.94em;
+  font-size: 0.96em;
   font-weight: 600;
   color: #f4f4f5;
   letter-spacing: -0.01em;
@@ -1465,10 +1481,13 @@
 }
 
 .form-card-body {
-  padding: 18px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: fit-content;
+  box-sizing: border-box;
+  overflow: visible;
 }
 
 /* Grid Layouts - Responsive and blowout proof */
@@ -1586,6 +1605,8 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  flex-shrink: 0 !important;
+  min-height: fit-content;
   transition: border-color 0.18s ease;
 }
 
@@ -1813,12 +1834,87 @@
    Template Manager Modal Styles
    ========================================================================== */
 
-.template-modal-content {
-  max-width: 820px;
-  width: 90%;
-  max-height: 85vh;
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease-out;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.modal-content {
+  background-color: #18181b;
+  border: 1px solid #333338;
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65);
+  animation: modalPopIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+@keyframes modalPopIn {
+  from {
+    transform: scale(0.96) translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.template-modal-content {
+  max-width: 860px;
+  width: 92%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #18181b;
+}
+
+.modal-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #27272a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1c1c20;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 600;
+  color: #f4f4f5;
+  letter-spacing: -0.01em;
+}
+
+.btn-close {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btn-close:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 .template-modal-tabs {

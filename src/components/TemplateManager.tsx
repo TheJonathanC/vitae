@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { Template, ResumeData } from "../types";
 import { convertRawLatexToTemplate, extractFieldsFromTemplate } from "../utils/templateEngine";
@@ -43,6 +43,20 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (viewingTemplate) {
+          setViewingTemplate(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [viewingTemplate, onClose]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -130,12 +144,24 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
   };
 
   return (
-    <div className="modal-overlay" data-testid="template-manager-modal">
-      <div className="modal-content template-modal-content">
+    <div
+      className="modal-overlay"
+      data-testid="template-manager-modal"
+      onClick={onClose}
+    >
+      <div
+        className="modal-content template-modal-content"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h2>Resume Templates</h2>
-          <button className="btn-close" onClick={onClose} title="Close">
-            ×
+          <button
+            className="btn-close"
+            onClick={onClose}
+            title="Close modal"
+            aria-label="Close"
+          >
+            <IconX size={18} />
           </button>
         </div>
 

@@ -88,6 +88,24 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     return { prev, next };
   };
 
+  const handleTabChange = (section: ResumeSectionId) => {
+    setActiveSection(section);
+    if (section !== "all") {
+      setCollapsedSections((prev) => ({
+        ...prev,
+        [section]: false,
+      }));
+    }
+  };
+
+  const handleNavigate = (targetSection: Exclude<ResumeSectionId, "all">) => {
+    setActiveSection(targetSection);
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [targetSection]: false,
+    }));
+  };
+
   const renderTraversalFooter = (sectionKey: Exclude<ResumeSectionId, "all">) => {
     const { prev, next } = getAdjacentSections(sectionKey);
     return (
@@ -96,7 +114,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
           <button
             type="button"
             className="btn-traversal btn-prev"
-            onClick={() => setActiveSection(prev)}
+            onClick={() => handleNavigate(prev)}
             data-testid={`btn-nav-prev-${sectionKey}`}
             title={`Go to previous section: ${SECTION_METADATA[prev]?.label}`}
           >
@@ -107,7 +125,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
           <button
             type="button"
             className="btn-traversal btn-secondary-nav"
-            onClick={() => setActiveSection("all")}
+            onClick={() => handleTabChange("all")}
             title="View all sections at once"
           >
             <IconLayers size={14} />
@@ -119,7 +137,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
           <button
             type="button"
             className="btn-traversal btn-traversal-primary btn-next"
-            onClick={() => setActiveSection(next)}
+            onClick={() => handleNavigate(next)}
             data-testid={`btn-nav-next-${sectionKey}`}
             title={`Go to next section: ${SECTION_METADATA[next]?.label}`}
           >
@@ -130,7 +148,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
           <button
             type="button"
             className="btn-traversal btn-traversal-primary"
-            onClick={() => setActiveSection("all")}
+            onClick={() => handleTabChange("all")}
             title="Done traversing, view all sections"
           >
             <IconCheck size={14} />
@@ -142,10 +160,23 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   const toggleSection = (sectionKey: string) => {
-    setCollapsedSections((prev) => ({
-      ...prev,
-      [sectionKey]: !prev[sectionKey],
-    }));
+    if (activeSection !== "all") return;
+    setCollapsedSections((prev) => {
+      const isCurrentlyOpen = !prev[sectionKey];
+      if (isCurrentlyOpen) {
+        return { ...prev, [sectionKey]: true };
+      } else {
+        return {
+          personal: true,
+          experience: true,
+          education: true,
+          projects: true,
+          skills: true,
+          custom: true,
+          [sectionKey]: false,
+        };
+      }
+    });
   };
 
   // Helper to update personal info
@@ -422,7 +453,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             role="tab"
             aria-selected={activeSection === "all"}
             className={`section-tab-btn ${activeSection === "all" ? "active" : ""}`}
-            onClick={() => setActiveSection("all")}
+            onClick={() => handleTabChange("all")}
             data-testid="section-tab-all"
             title="Show all resume sections at once"
           >
@@ -435,7 +466,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             role="tab"
             aria-selected={activeSection === "personal"}
             className={`section-tab-btn ${activeSection === "personal" ? "active" : ""}`}
-            onClick={() => setActiveSection("personal")}
+            onClick={() => handleTabChange("personal")}
             data-testid="section-tab-personal"
             title="Personal information & contact details"
           >
@@ -448,7 +479,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             role="tab"
             aria-selected={activeSection === "experience"}
             className={`section-tab-btn ${activeSection === "experience" ? "active" : ""}`}
-            onClick={() => setActiveSection("experience")}
+            onClick={() => handleTabChange("experience")}
             data-testid="section-tab-experience"
             title="Work experience and employment history"
           >
@@ -462,7 +493,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             role="tab"
             aria-selected={activeSection === "education"}
             className={`section-tab-btn ${activeSection === "education" ? "active" : ""}`}
-            onClick={() => setActiveSection("education")}
+            onClick={() => handleTabChange("education")}
             data-testid="section-tab-education"
             title="Degrees, schools, and credentials"
           >
@@ -476,7 +507,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             role="tab"
             aria-selected={activeSection === "projects"}
             className={`section-tab-btn ${activeSection === "projects" ? "active" : ""}`}
-            onClick={() => setActiveSection("projects")}
+            onClick={() => handleTabChange("projects")}
             data-testid="section-tab-projects"
             title="Side projects and portfolio items"
           >
@@ -490,7 +521,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             role="tab"
             aria-selected={activeSection === "skills"}
             className={`section-tab-btn ${activeSection === "skills" ? "active" : ""}`}
-            onClick={() => setActiveSection("skills")}
+            onClick={() => handleTabChange("skills")}
             data-testid="section-tab-skills"
             title="Skills and technologies"
           >
@@ -505,7 +536,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               role="tab"
               aria-selected={activeSection === "custom"}
               className={`section-tab-btn ${activeSection === "custom" ? "active" : ""}`}
-              onClick={() => setActiveSection("custom")}
+              onClick={() => handleTabChange("custom")}
               data-testid="section-tab-custom"
               title="Template custom variables and extra sections"
             >
@@ -523,24 +554,32 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {(activeSection === "all" || activeSection === "personal") && (
         <div className="form-card" data-testid="section-card-personal">
           <div
-            className="form-card-header"
+            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
             onClick={() => toggleSection("personal")}
-            role="button"
-            tabIndex={0}
+            role={activeSection === "all" ? "button" : undefined}
+            tabIndex={activeSection === "all" ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                toggleSection("personal");
+              }
+            }}
           >
             <div className="header-title">
               <span className="icon"><IconUser size={16} /></span>
               <h3>Personal Information</h3>
             </div>
-            <div className="header-actions">
-              <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["personal"] ? (
-                  <IconChevronDown size={14} />
-                ) : (
-                  <IconChevronUp size={14} />
-                )}
-              </span>
-            </div>
+            {activeSection === "all" && (
+              <div className="header-actions">
+                <span className="toggle-indicator">
+                  {collapsedSections["personal"] ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {(!collapsedSections["personal"] || activeSection === "personal") && (
@@ -647,24 +686,32 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {(activeSection === "all" || activeSection === "experience") && (
         <div className="form-card" data-testid="section-card-experience">
           <div
-            className="form-card-header"
+            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
             onClick={() => toggleSection("experience")}
-            role="button"
-            tabIndex={0}
+            role={activeSection === "all" ? "button" : undefined}
+            tabIndex={activeSection === "all" ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                toggleSection("experience");
+              }
+            }}
           >
             <div className="header-title">
               <span className="icon"><IconBriefcase size={16} /></span>
               <h3>Experience ({data.experience.length})</h3>
             </div>
-            <div className="header-actions">
-              <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["experience"] ? (
-                  <IconChevronDown size={14} />
-                ) : (
-                  <IconChevronUp size={14} />
-                )}
-              </span>
-            </div>
+            {activeSection === "all" && (
+              <div className="header-actions">
+                <span className="toggle-indicator">
+                  {collapsedSections["experience"] ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {(!collapsedSections["experience"] || activeSection === "experience") && (
@@ -789,24 +836,32 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {(activeSection === "all" || activeSection === "education") && (
         <div className="form-card" data-testid="section-card-education">
           <div
-            className="form-card-header"
+            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
             onClick={() => toggleSection("education")}
-            role="button"
-            tabIndex={0}
+            role={activeSection === "all" ? "button" : undefined}
+            tabIndex={activeSection === "all" ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                toggleSection("education");
+              }
+            }}
           >
             <div className="header-title">
               <span className="icon"><IconGraduationCap size={16} /></span>
               <h3>Education ({data.education.length})</h3>
             </div>
-            <div className="header-actions">
-              <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["education"] ? (
-                  <IconChevronDown size={14} />
-                ) : (
-                  <IconChevronUp size={14} />
-                )}
-              </span>
-            </div>
+            {activeSection === "all" && (
+              <div className="header-actions">
+                <span className="toggle-indicator">
+                  {collapsedSections["education"] ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {(!collapsedSections["education"] || activeSection === "education") && (
@@ -909,24 +964,32 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {(activeSection === "all" || activeSection === "projects") && (
         <div className="form-card" data-testid="section-card-projects">
           <div
-            className="form-card-header"
+            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
             onClick={() => toggleSection("projects")}
-            role="button"
-            tabIndex={0}
+            role={activeSection === "all" ? "button" : undefined}
+            tabIndex={activeSection === "all" ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                toggleSection("projects");
+              }
+            }}
           >
             <div className="header-title">
               <span className="icon"><IconFolder size={16} /></span>
               <h3>Projects ({data.projects.length})</h3>
             </div>
-            <div className="header-actions">
-              <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["projects"] ? (
-                  <IconChevronDown size={14} />
-                ) : (
-                  <IconChevronUp size={14} />
-                )}
-              </span>
-            </div>
+            {activeSection === "all" && (
+              <div className="header-actions">
+                <span className="toggle-indicator">
+                  {collapsedSections["projects"] ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {(!collapsedSections["projects"] || activeSection === "projects") && (
@@ -1030,24 +1093,32 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {(activeSection === "all" || activeSection === "skills") && (
         <div className="form-card" data-testid="section-card-skills">
           <div
-            className="form-card-header"
+            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
             onClick={() => toggleSection("skills")}
-            role="button"
-            tabIndex={0}
+            role={activeSection === "all" ? "button" : undefined}
+            tabIndex={activeSection === "all" ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                toggleSection("skills");
+              }
+            }}
           >
             <div className="header-title">
               <span className="icon"><IconWrench size={16} /></span>
               <h3>Skills & Technologies ({data.skills.length})</h3>
             </div>
-            <div className="header-actions">
-              <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["skills"] ? (
-                  <IconChevronDown size={14} />
-                ) : (
-                  <IconChevronUp size={14} />
-                )}
-              </span>
-            </div>
+            {activeSection === "all" && (
+              <div className="header-actions">
+                <span className="toggle-indicator">
+                  {collapsedSections["skills"] ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {(!collapsedSections["skills"] || activeSection === "skills") && (
@@ -1110,24 +1181,32 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       {hasCustom && (activeSection === "all" || activeSection === "custom") && (
         <div className="form-card" data-testid="section-card-custom">
           <div
-            className="form-card-header"
+            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
             onClick={() => toggleSection("custom")}
-            role="button"
-            tabIndex={0}
+            role={activeSection === "all" ? "button" : undefined}
+            tabIndex={activeSection === "all" ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                toggleSection("custom");
+              }
+            }}
           >
             <div className="header-title">
               <span className="icon"><IconSparkles size={16} /></span>
               <h3>Template Custom Fields & Sections</h3>
             </div>
-            <div className="header-actions">
-              <span className="toggle-indicator">
-                {activeSection === "all" && collapsedSections["custom"] ? (
-                  <IconChevronDown size={14} />
-                ) : (
-                  <IconChevronUp size={14} />
-                )}
-              </span>
-            </div>
+            {activeSection === "all" && (
+              <div className="header-actions">
+                <span className="toggle-indicator">
+                  {collapsedSections["custom"] ? (
+                    <IconChevronDown size={14} />
+                  ) : (
+                    <IconChevronUp size={14} />
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {(!collapsedSections["custom"] || activeSection === "custom") && (
