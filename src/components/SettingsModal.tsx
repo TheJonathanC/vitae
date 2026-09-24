@@ -210,7 +210,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
                 <div className="channel-info">
                   <div className="channel-title">
                     <span>Stable Channel</span>
-                    <span className="badge-stable">v2.0</span>
+                    <span className="badge-stable">v1.1</span>
                   </div>
                   <div className="channel-text">
                     Only receive official milestone releases once tested and promoted to stable.

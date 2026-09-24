@@ -93,7 +93,7 @@ The built application will be in `src-tauri/target/release/`.
 Vitae includes a GitHub Actions CI/CD pipeline (`.github/workflows/ci-cd.yml`) and in-app release channel toggling:
 
 - **Beta Channel (`v1.1-beta`)**: Every commit to `main` is automatically tested (Rust + React unit tests) and published as a beta release (`v1.1.0-beta.<build>`) with rolling updater manifest `latest-beta.json`.
-- **Stable Channel (`v2.0+`)**: When tagged as a stable release (e.g. `v2.0.0`), the pipeline generates the `latest.json` manifest.
+- **Stable Channel (`v1.1+`)**: When tagged as a stable release (e.g. `v1.1.0`), the pipeline generates the `latest.json` manifest.
 - **In-App Channel Switcher**: Users can open **⚙️ Settings** to switch between Beta and Stable channels at any time and check for updates manually or on startup.
 
 ### GitHub Repository Secrets for Auto-Updates:

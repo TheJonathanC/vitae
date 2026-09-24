@@ -20,7 +20,7 @@ on:
           - beta
           - stable
       version:
-        description: 'Version string (optional, e.g. 2.0.0 or 1.1.0-beta.2)'
+        description: 'Version string (optional, e.g. 1.1.0 or 1.1.0-beta.2)'
         required: false
         type: string
 
@@ -95,11 +95,11 @@ jobs:
           $explicitChannel = "${{ inputs.channel }}"
           $explicitVersion = "${{ inputs.version }}"
           
-          # Default: until stable v2.0 is declared, all main builds are in the beta stream (v1.1-beta)
+          # Tagged release: any tag not containing beta/alpha/rc is treated as stable
           if ($isTag) {
             $rawTag = "${{ github.ref_name }}"
             $ver = $rawTag.TrimStart('v')
-            if ($rawTag.StartsWith("v2.") -and $rawTag -notmatch "beta") {
+            if ($rawTag -notmatch "beta" -and $rawTag -notmatch "alpha" -and $rawTag -notmatch "rc") {
               $channel = "stable"
               $isPrerelease = $false
             } else {
@@ -112,7 +112,7 @@ jobs:
             if ($explicitVersion -and $explicitVersion.Trim() -ne "") {
               $ver = $explicitVersion.TrimStart('v')
             } else {
-              $ver = "2.0.0"
+              $ver = "1.1.0"
             }
             $tag = "v$ver"
             $isPrerelease = $false
