@@ -1522,6 +1522,38 @@
   color: #d4d4d8;
 }
 
+.section-reorder-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-section-reorder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background-color: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.btn-section-reorder:hover:not(:disabled) {
+  background-color: #38383e;
+  border-color: #52525b;
+  color: #38bdf8;
+}
+
+.btn-section-reorder:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 .form-card-body {
   padding: 20px;
   display: flex;
@@ -1634,6 +1666,101 @@
   color: #52525b;
 }
 
+/* Field Header & Reordering Controls */
+.field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.field-header label {
+  margin: 0;
+}
+
+.field-reorder-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.btn-field-reorder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid #2e2e34;
+  border-radius: 4px;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.btn-field-reorder:hover:not(:disabled) {
+  background-color: #27272a;
+  border-color: #3f3f46;
+  color: #38bdf8;
+}
+
+.btn-field-reorder:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.personal-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.personal-field-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.personal-field-summary {
+  grid-column: 1 / -1;
+}
+
+.experience-fields-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.experience-field-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.field-order-hint {
+  font-size: 0.76em;
+  color: #71717a;
+  font-style: italic;
+  margin-top: -6px;
+  margin-bottom: 4px;
+}
+
+.sub-label {
+  font-size: 0.72em;
+  color: #71717a;
+  font-weight: 500;
+}
+
 /* Entry Cards (Experience, Education, Projects) */
 .entry-card {
   background-color: #141416;
@@ -1663,6 +1790,55 @@
   border-bottom: 1px solid #27272a;
   padding-bottom: 10px;
   gap: 10px;
+}
+
+.entry-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.entry-index-badge {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: #71717a;
+  background-color: #1c1c20;
+  border: 1px solid #2e2e34;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-entry-reorder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: #1e1e24;
+  border: 1px solid #2e2e34;
+  border-radius: 5px;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.btn-entry-reorder:hover:not(:disabled) {
+  background-color: #2a2a32;
+  border-color: #3f3f46;
+  color: #38bdf8;
+}
+
+.btn-entry-reorder:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }
 
 .entry-header h4 {
@@ -1747,6 +1923,36 @@
   outline: none;
   border-color: #0284c7;
   box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.bullet-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.btn-bullet-reorder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.btn-bullet-reorder:hover:not(:disabled) {
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.1);
+}
+
+.btn-bullet-reorder:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }
 
 .btn-bullet-remove {

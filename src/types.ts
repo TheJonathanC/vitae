@@ -98,6 +98,12 @@ export interface ResumeData {
   skills: ResumeSkillItem[];
   customSections?: ResumeCustomSection[];
   customVariables?: Record<string, string>;
+  sectionOrder?: string[];
+  personalFieldOrder?: string[];
+  experienceFieldOrder?: string[];
+  educationFieldOrder?: string[];
+  projectFieldOrder?: string[];
+  skillFieldOrder?: string[];
 }
 
 export interface ExtractedTemplateField {

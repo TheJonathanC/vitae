@@ -163,4 +163,115 @@ describe("ResumeForm component", () => {
     expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
     expect(screen.getByTestId("section-card-education")).toBeInTheDocument();
   });
+
+  it("allows reordering sections in the visual form", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    // Click Move Up on the Experience section
+    const moveExpUpBtn = screen.getByTestId("btn-move-section-up-experience");
+    fireEvent.click(moveExpUpBtn);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sectionOrder: ["experience", "personal", "education", "projects", "skills"],
+      })
+    );
+  });
+
+  it("allows reordering items in the personal info section (e.g. moving location and email)", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    // Move email up (it is initially after title)
+    const moveEmailUp = screen.getByTestId("btn-move-personal-email-up");
+    fireEvent.click(moveEmailUp);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personalFieldOrder: expect.arrayContaining(["email", "name"]),
+      })
+    );
+
+    // Move location down
+    const moveLocationDown = screen.getByTestId("btn-move-personal-location-down");
+    fireEvent.click(moveLocationDown);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personalFieldOrder: expect.any(Array),
+      })
+    );
+  });
+
+  it("allows reordering experience entries and reflects on experience items", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    expect(initialData.experience.length).toBeGreaterThanOrEqual(2);
+    // Move second experience entry up
+    const moveExpUp = screen.getByTestId("btn-move-experience-up-1");
+    fireEvent.click(moveExpUp);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experience: [
+          initialData.experience[1],
+          initialData.experience[0],
+        ],
+      })
+    );
+  });
+
+  it("reordering experience fields updates field order and reflects on all entries", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    // Click Move Up on company field in experience (initially at index 1 after role)
+    const moveCompanyUpBtns = screen.getAllByTestId("btn-move-experience-company-up");
+    expect(moveCompanyUpBtns.length).toBeGreaterThan(1);
+    fireEvent.click(moveCompanyUpBtns[0]);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experienceFieldOrder: ["company", "role", "location", "dates", "bullets"],
+      })
+    );
+
+    // Rerender with the updated experienceFieldOrder to verify it reflects across ALL entries
+    const updatedData: ResumeData = {
+      ...initialData,
+      experienceFieldOrder: ["company", "role", "location", "dates", "bullets"],
+    };
+    rerender(<ResumeForm data={updatedData} onChange={onChange} />);
+
+    // Both entry 0 and entry 1 should have company field rendered first
+    expect(screen.getByTestId("exp-field-company-0")).toBeInTheDocument();
+    expect(screen.getByTestId("exp-field-company-1")).toBeInTheDocument();
+  });
+
+  it("allows reordering bullets within an experience entry", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    const expId = initialData.experience[0].id;
+    // Move second bullet up
+    const moveBulletUp = screen.getByTestId(`btn-move-exp-bullet-up-${expId}-1`);
+    fireEvent.click(moveBulletUp);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experience: expect.arrayContaining([
+          expect.objectContaining({
+            id: expId,
+            bullets: [
+              initialData.experience[0].bullets[1],
+              initialData.experience[0].bullets[0],
+              ...initialData.experience[0].bullets.slice(2),
+            ],
+          }),
+        ]),
+      })
+    );
+  });
 });

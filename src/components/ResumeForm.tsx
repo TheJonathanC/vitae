@@ -6,6 +6,7 @@ import {
   ResumeProjectItem,
   ResumeSkillItem,
   ResumeCustomSection,
+  ResumePersonalInfo,
   ExtractedTemplateField,
 } from "../types";
 import {
@@ -44,6 +45,87 @@ interface ResumeFormProps {
   onChangeTemplateClick?: () => void;
 }
 
+type PersonalFieldKey = keyof ResumePersonalInfo;
+const DEFAULT_PERSONAL_FIELD_ORDER: PersonalFieldKey[] = [
+  "name",
+  "title",
+  "email",
+  "phone",
+  "location",
+  "website",
+  "linkedin",
+  "github",
+  "summary",
+];
+
+const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
+  name: "Full Name *",
+  title: "Job Title / Headline",
+  email: "Email",
+  phone: "Phone",
+  location: "Location",
+  website: "Website / Portfolio",
+  linkedin: "LinkedIn",
+  github: "GitHub",
+  summary: "Professional Summary",
+};
+
+type ExperienceFieldKey = "role" | "company" | "location" | "dates" | "bullets";
+const DEFAULT_EXPERIENCE_FIELD_ORDER: ExperienceFieldKey[] = [
+  "role",
+  "company",
+  "location",
+  "dates",
+  "bullets",
+];
+
+const EXPERIENCE_FIELD_LABELS: Record<ExperienceFieldKey, string> = {
+  role: "Role / Position",
+  company: "Company / Organization",
+  location: "Location",
+  dates: "Dates / Duration",
+  bullets: "Key Achievements / Bullets",
+};
+
+type EducationFieldKey = "degree" | "institution" | "location" | "dates" | "details";
+const DEFAULT_EDUCATION_FIELD_ORDER: EducationFieldKey[] = [
+  "degree",
+  "institution",
+  "location",
+  "dates",
+  "details",
+];
+
+const EDUCATION_FIELD_LABELS: Record<EducationFieldKey, string> = {
+  degree: "Degree / Certificate",
+  institution: "Institution / University",
+  location: "Location",
+  dates: "Dates",
+  details: "Honors, GPA or Coursework",
+};
+
+type ProjectFieldKey = "name" | "technologies" | "link" | "bullets";
+const DEFAULT_PROJECT_FIELD_ORDER: ProjectFieldKey[] = [
+  "name",
+  "technologies",
+  "link",
+  "bullets",
+];
+
+const PROJECT_FIELD_LABELS: Record<ProjectFieldKey, string> = {
+  name: "Project Name",
+  technologies: "Tech Stack / Technologies",
+  link: "Project Link / URL",
+  bullets: "Project Highlights",
+};
+
+type SkillFieldKey = "category" | "skills";
+const DEFAULT_SKILL_FIELD_ORDER: SkillFieldKey[] = ["category", "skills"];
+const SKILL_FIELD_LABELS: Record<SkillFieldKey, string> = {
+  category: "Category",
+  skills: "Skills / Items",
+};
+
 export const ResumeForm: React.FC<ResumeFormProps> = ({
   data,
   onChange,
@@ -57,7 +139,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   const hasCustom =
     customFields.length > 0 || (data.customSections && data.customSections.length > 0);
 
-  const sequentialSections: Array<Exclude<ResumeSectionId, "all">> = [
+  const defaultSectionOrder: Array<Exclude<ResumeSectionId, "all">> = [
     "personal",
     "experience",
     "education",
@@ -65,8 +147,24 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     "skills",
   ];
   if (hasCustom) {
-    sequentialSections.push("custom");
+    defaultSectionOrder.push("custom");
   }
+
+  // Calculate effective section order
+  const effectiveSectionOrder: Array<Exclude<ResumeSectionId, "all">> = (() => {
+    if (!data.sectionOrder || !Array.isArray(data.sectionOrder)) {
+      return defaultSectionOrder;
+    }
+    const filtered = data.sectionOrder.filter((s) =>
+      defaultSectionOrder.includes(s as any)
+    ) as Array<Exclude<ResumeSectionId, "all">>;
+    for (const s of defaultSectionOrder) {
+      if (!filtered.includes(s)) {
+        filtered.push(s);
+      }
+    }
+    return filtered;
+  })();
 
   const SECTION_METADATA: Record<
     string,
@@ -81,10 +179,10 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   const getAdjacentSections = (current: string) => {
-    const idx = sequentialSections.indexOf(current as any);
+    const idx = effectiveSectionOrder.indexOf(current as any);
     if (idx === -1) return { prev: null, next: null };
-    const prev = idx > 0 ? sequentialSections[idx - 1] : null;
-    const next = idx < sequentialSections.length - 1 ? sequentialSections[idx + 1] : null;
+    const prev = idx > 0 ? effectiveSectionOrder[idx - 1] : null;
+    const next = idx < effectiveSectionOrder.length - 1 ? effectiveSectionOrder[idx + 1] : null;
     return { prev, next };
   };
 
@@ -106,80 +204,47 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     }));
   };
 
-  const renderTraversalFooter = (sectionKey: Exclude<ResumeSectionId, "all">) => {
-    const { prev, next } = getAdjacentSections(sectionKey);
-    return (
-      <div className="section-traversal-bar" data-testid={`traversal-bar-${sectionKey}`}>
-        {prev ? (
-          <button
-            type="button"
-            className="btn-traversal btn-prev"
-            onClick={() => handleNavigate(prev)}
-            data-testid={`btn-nav-prev-${sectionKey}`}
-            title={`Go to previous section: ${SECTION_METADATA[prev]?.label}`}
-          >
-            <IconChevronLeft size={14} />
-            <span>{SECTION_METADATA[prev]?.label}</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn-traversal btn-secondary-nav"
-            onClick={() => handleTabChange("all")}
-            title="View all sections at once"
-          >
-            <IconLayers size={14} />
-            <span>All Sections</span>
-          </button>
-        )}
-
-        {next ? (
-          <button
-            type="button"
-            className="btn-traversal btn-traversal-primary btn-next"
-            onClick={() => handleNavigate(next)}
-            data-testid={`btn-nav-next-${sectionKey}`}
-            title={`Go to next section: ${SECTION_METADATA[next]?.label}`}
-          >
-            <span>{SECTION_METADATA[next]?.label}</span>
-            <IconChevronRight size={14} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn-traversal btn-traversal-primary"
-            onClick={() => handleTabChange("all")}
-            title="Done traversing, view all sections"
-          >
-            <IconCheck size={14} />
-            <span>Finish & View All</span>
-          </button>
-        )}
-      </div>
-    );
-  };
-
-  const toggleSection = (sectionKey: string) => {
-    if (activeSection !== "all") return;
-    setCollapsedSections((prev) => {
-      const isCurrentlyOpen = !prev[sectionKey];
-      if (isCurrentlyOpen) {
-        return { ...prev, [sectionKey]: true };
-      } else {
-        return {
-          personal: true,
-          experience: true,
-          education: true,
-          projects: true,
-          skills: true,
-          custom: true,
-          [sectionKey]: false,
-        };
-      }
+  // Section reordering
+  const handleMoveSection = (secIndex: number, delta: -1 | 1) => {
+    const newIdx = secIndex + delta;
+    if (newIdx < 0 || newIdx >= effectiveSectionOrder.length) return;
+    const newOrder = [...effectiveSectionOrder];
+    const [moved] = newOrder.splice(secIndex, 1);
+    newOrder.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      sectionOrder: newOrder,
     });
   };
 
-  // Helper to update personal info
+  // Personal fields reordering
+  const effectivePersonalFieldOrder: PersonalFieldKey[] = (() => {
+    if (!data.personalFieldOrder || !Array.isArray(data.personalFieldOrder)) {
+      return DEFAULT_PERSONAL_FIELD_ORDER;
+    }
+    const filtered = data.personalFieldOrder.filter((f) =>
+      DEFAULT_PERSONAL_FIELD_ORDER.includes(f as any)
+    ) as PersonalFieldKey[];
+    for (const f of DEFAULT_PERSONAL_FIELD_ORDER) {
+      if (!filtered.includes(f)) {
+        filtered.push(f);
+      }
+    }
+    return filtered;
+  })();
+
+  const handleMovePersonalField = (fieldIdx: number, delta: -1 | 1) => {
+    const newIdx = fieldIdx + delta;
+    if (newIdx < 0 || newIdx >= effectivePersonalFieldOrder.length) return;
+    const newOrder = [...effectivePersonalFieldOrder];
+    const [moved] = newOrder.splice(fieldIdx, 1);
+    newOrder.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      personalFieldOrder: newOrder,
+    });
+  };
+
   const handlePersonalChange = (field: keyof ResumeData["personal"], value: string) => {
     onChange({
       ...data,
@@ -191,6 +256,45 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   // Experience handlers
+  const effectiveExperienceFieldOrder: ExperienceFieldKey[] = (() => {
+    if (!data.experienceFieldOrder || !Array.isArray(data.experienceFieldOrder)) {
+      return DEFAULT_EXPERIENCE_FIELD_ORDER;
+    }
+    const filtered = data.experienceFieldOrder.filter((f) =>
+      DEFAULT_EXPERIENCE_FIELD_ORDER.includes(f as any)
+    ) as ExperienceFieldKey[];
+    for (const f of DEFAULT_EXPERIENCE_FIELD_ORDER) {
+      if (!filtered.includes(f)) {
+        filtered.push(f);
+      }
+    }
+    return filtered;
+  })();
+
+  const handleMoveExperienceField = (fieldIdx: number, delta: -1 | 1) => {
+    const newIdx = fieldIdx + delta;
+    if (newIdx < 0 || newIdx >= effectiveExperienceFieldOrder.length) return;
+    const newOrder = [...effectiveExperienceFieldOrder];
+    const [moved] = newOrder.splice(fieldIdx, 1);
+    newOrder.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      experienceFieldOrder: newOrder,
+    });
+  };
+
+  const handleMoveExperience = (expIdx: number, delta: -1 | 1) => {
+    const newIdx = expIdx + delta;
+    if (newIdx < 0 || newIdx >= data.experience.length) return;
+    const newExp = [...data.experience];
+    const [moved] = newExp.splice(expIdx, 1);
+    newExp.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      experience: newExp,
+    });
+  };
+
   const handleAddExperience = () => {
     const newItem: ResumeExperienceItem = {
       id: "exp-" + Date.now(),
@@ -257,7 +361,59 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     });
   };
 
+  const handleMoveExpBullet = (expId: string, bulletIndex: number, delta: -1 | 1) => {
+    onChange({
+      ...data,
+      experience: data.experience.map((item) => {
+        if (item.id !== expId) return item;
+        const newIdx = bulletIndex + delta;
+        if (newIdx < 0 || newIdx >= item.bullets.length) return item;
+        const newBullets = [...item.bullets];
+        const [moved] = newBullets.splice(bulletIndex, 1);
+        newBullets.splice(newIdx, 0, moved);
+        return { ...item, bullets: newBullets };
+      }),
+    });
+  };
+
   // Education handlers
+  const effectiveEducationFieldOrder: EducationFieldKey[] = (() => {
+    if (!data.educationFieldOrder || !Array.isArray(data.educationFieldOrder)) {
+      return DEFAULT_EDUCATION_FIELD_ORDER;
+    }
+    const filtered = data.educationFieldOrder.filter((f) =>
+      DEFAULT_EDUCATION_FIELD_ORDER.includes(f as any)
+    ) as EducationFieldKey[];
+    for (const f of DEFAULT_EDUCATION_FIELD_ORDER) {
+      if (!filtered.includes(f)) filtered.push(f);
+    }
+    return filtered;
+  })();
+
+  const handleMoveEducationField = (fieldIdx: number, delta: -1 | 1) => {
+    const newIdx = fieldIdx + delta;
+    if (newIdx < 0 || newIdx >= effectiveEducationFieldOrder.length) return;
+    const newOrder = [...effectiveEducationFieldOrder];
+    const [moved] = newOrder.splice(fieldIdx, 1);
+    newOrder.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      educationFieldOrder: newOrder,
+    });
+  };
+
+  const handleMoveEducation = (eduIdx: number, delta: -1 | 1) => {
+    const newIdx = eduIdx + delta;
+    if (newIdx < 0 || newIdx >= data.education.length) return;
+    const newEdu = [...data.education];
+    const [moved] = newEdu.splice(eduIdx, 1);
+    newEdu.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      education: newEdu,
+    });
+  };
+
   const handleAddEducation = () => {
     const newItem: ResumeEducationItem = {
       id: "edu-" + Date.now(),
@@ -291,6 +447,43 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   // Project handlers
+  const effectiveProjectFieldOrder: ProjectFieldKey[] = (() => {
+    if (!data.projectFieldOrder || !Array.isArray(data.projectFieldOrder)) {
+      return DEFAULT_PROJECT_FIELD_ORDER;
+    }
+    const filtered = data.projectFieldOrder.filter((f) =>
+      DEFAULT_PROJECT_FIELD_ORDER.includes(f as any)
+    ) as ProjectFieldKey[];
+    for (const f of DEFAULT_PROJECT_FIELD_ORDER) {
+      if (!filtered.includes(f)) filtered.push(f);
+    }
+    return filtered;
+  })();
+
+  const handleMoveProjectField = (fieldIdx: number, delta: -1 | 1) => {
+    const newIdx = fieldIdx + delta;
+    if (newIdx < 0 || newIdx >= effectiveProjectFieldOrder.length) return;
+    const newOrder = [...effectiveProjectFieldOrder];
+    const [moved] = newOrder.splice(fieldIdx, 1);
+    newOrder.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      projectFieldOrder: newOrder,
+    });
+  };
+
+  const handleMoveProject = (projIdx: number, delta: -1 | 1) => {
+    const newIdx = projIdx + delta;
+    if (newIdx < 0 || newIdx >= data.projects.length) return;
+    const newProj = [...data.projects];
+    const [moved] = newProj.splice(projIdx, 1);
+    newProj.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      projects: newProj,
+    });
+  };
+
   const handleAddProject = () => {
     const newItem: ResumeProjectItem = {
       id: "proj-" + Date.now(),
@@ -355,7 +548,59 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     });
   };
 
+  const handleMoveProjBullet = (projId: string, bulletIndex: number, delta: -1 | 1) => {
+    onChange({
+      ...data,
+      projects: data.projects.map((item) => {
+        if (item.id !== projId) return item;
+        const newIdx = bulletIndex + delta;
+        if (newIdx < 0 || newIdx >= item.bullets.length) return item;
+        const newBullets = [...item.bullets];
+        const [moved] = newBullets.splice(bulletIndex, 1);
+        newBullets.splice(newIdx, 0, moved);
+        return { ...item, bullets: newBullets };
+      }),
+    });
+  };
+
   // Skill handlers
+  const effectiveSkillFieldOrder: SkillFieldKey[] = (() => {
+    if (!data.skillFieldOrder || !Array.isArray(data.skillFieldOrder)) {
+      return DEFAULT_SKILL_FIELD_ORDER;
+    }
+    const filtered = data.skillFieldOrder.filter((f) =>
+      DEFAULT_SKILL_FIELD_ORDER.includes(f as any)
+    ) as SkillFieldKey[];
+    for (const f of DEFAULT_SKILL_FIELD_ORDER) {
+      if (!filtered.includes(f)) filtered.push(f);
+    }
+    return filtered;
+  })();
+
+  const handleMoveSkillField = (fieldIdx: number, delta: -1 | 1) => {
+    const newIdx = fieldIdx + delta;
+    if (newIdx < 0 || newIdx >= effectiveSkillFieldOrder.length) return;
+    const newOrder = [...effectiveSkillFieldOrder];
+    const [moved] = newOrder.splice(fieldIdx, 1);
+    newOrder.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      skillFieldOrder: newOrder,
+    });
+  };
+
+  const handleMoveSkill = (skillIdx: number, delta: -1 | 1) => {
+    const newIdx = skillIdx + delta;
+    if (newIdx < 0 || newIdx >= data.skills.length) return;
+    const newSkills = [...data.skills];
+    const [moved] = newSkills.splice(skillIdx, 1);
+    newSkills.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      skills: newSkills,
+    });
+  };
+
   const handleAddSkill = () => {
     const newItem: ResumeSkillItem = {
       id: "skill-" + Date.now(),
@@ -385,6 +630,19 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   // Custom sections handlers
+  const handleMoveCustomSection = (secIdx: number, delta: -1 | 1) => {
+    const list = data.customSections || [];
+    const newIdx = secIdx + delta;
+    if (newIdx < 0 || newIdx >= list.length) return;
+    const newSec = [...list];
+    const [moved] = newSec.splice(secIdx, 1);
+    newSec.splice(newIdx, 0, moved);
+    onChange({
+      ...data,
+      customSections: newSec,
+    });
+  };
+
   const handleAddCustomSection = () => {
     const newItem: ResumeCustomSection = {
       id: "sec-" + Date.now(),
@@ -424,6 +682,1097 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     });
   };
 
+  const toggleSection = (sectionKey: string) => {
+    if (activeSection !== "all") return;
+    setCollapsedSections((prev) => {
+      const isCurrentlyOpen = !prev[sectionKey];
+      if (isCurrentlyOpen) {
+        return { ...prev, [sectionKey]: true };
+      } else {
+        return {
+          personal: true,
+          experience: true,
+          education: true,
+          projects: true,
+          skills: true,
+          custom: true,
+          [sectionKey]: false,
+        };
+      }
+    });
+  };
+
+  const renderTraversalFooter = (sectionKey: Exclude<ResumeSectionId, "all">) => {
+    const { prev, next } = getAdjacentSections(sectionKey);
+    return (
+      <div className="section-traversal-bar" data-testid={`traversal-bar-${sectionKey}`}>
+        {prev ? (
+          <button
+            type="button"
+            className="btn-traversal btn-prev"
+            onClick={() => handleNavigate(prev)}
+            data-testid={`btn-nav-prev-${sectionKey}`}
+            title={`Go to previous section: ${SECTION_METADATA[prev]?.label}`}
+          >
+            <IconChevronLeft size={14} />
+            <span>{SECTION_METADATA[prev]?.label}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-traversal btn-secondary-nav"
+            onClick={() => handleTabChange("all")}
+            title="View all sections at once"
+          >
+            <IconLayers size={14} />
+            <span>All Sections</span>
+          </button>
+        )}
+
+        {next ? (
+          <button
+            type="button"
+            className="btn-traversal btn-traversal-primary btn-next"
+            onClick={() => handleNavigate(next)}
+            data-testid={`btn-nav-next-${sectionKey}`}
+            title={`Go to next section: ${SECTION_METADATA[next]?.label}`}
+          >
+            <span>{SECTION_METADATA[next]?.label}</span>
+            <IconChevronRight size={14} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-traversal btn-traversal-primary"
+            onClick={() => handleTabChange("all")}
+            title="Done traversing, view all sections"
+          >
+            <IconCheck size={14} />
+            <span>Finish & View All</span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // Section Cards Renderer
+  const renderSectionCard = (
+    sectionKey: Exclude<ResumeSectionId, "all">,
+    secIdx: number
+  ) => {
+    const isCollapsed = collapsedSections[sectionKey] && activeSection === "all";
+
+    return (
+      <div
+        key={sectionKey}
+        className="form-card"
+        data-testid={`section-card-${sectionKey}`}
+      >
+        <div
+          className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
+          onClick={() => toggleSection(sectionKey)}
+          role={activeSection === "all" ? "button" : undefined}
+          tabIndex={activeSection === "all" ? 0 : undefined}
+          onKeyDown={(e) => {
+            if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              toggleSection(sectionKey);
+            }
+          }}
+        >
+          <div className="header-title">
+            <span className="icon">
+              {React.createElement(SECTION_METADATA[sectionKey].icon, { size: 16 })}
+            </span>
+            <h3>
+              {SECTION_METADATA[sectionKey].label}
+              {sectionKey === "experience" && ` (${data.experience.length})`}
+              {sectionKey === "education" && ` (${data.education.length})`}
+              {sectionKey === "projects" && ` (${data.projects.length})`}
+              {sectionKey === "skills" && ` (${data.skills.length})`}
+            </h3>
+          </div>
+
+          <div className="header-actions">
+            {activeSection === "all" && (
+              <div
+                className="section-reorder-actions"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="btn-section-reorder"
+                  disabled={secIdx === 0}
+                  onClick={() => handleMoveSection(secIdx, -1)}
+                  data-testid={`btn-move-section-up-${sectionKey}`}
+                  title={`Move ${SECTION_METADATA[sectionKey].label} section up`}
+                >
+                  <IconChevronUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="btn-section-reorder"
+                  disabled={secIdx === effectiveSectionOrder.length - 1}
+                  onClick={() => handleMoveSection(secIdx, 1)}
+                  data-testid={`btn-move-section-down-${sectionKey}`}
+                  title={`Move ${SECTION_METADATA[sectionKey].label} section down`}
+                >
+                  <IconChevronDown size={14} />
+                </button>
+              </div>
+            )}
+
+            {activeSection === "all" && (
+              <span className="toggle-indicator">
+                {isCollapsed ? (
+                  <IconChevronDown size={14} />
+                ) : (
+                  <IconChevronUp size={14} />
+                )}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {(!isCollapsed || (activeSection as string) === sectionKey) && (
+          <div className="form-card-body">
+            {/* PERSONAL INFO CARD BODY */}
+            {sectionKey === "personal" && (
+              <>
+                <div className="personal-fields-grid">
+                  {effectivePersonalFieldOrder.map((fieldKey, idx) => (
+                    <div
+                      key={fieldKey}
+                      className={`form-group personal-field-item ${
+                        fieldKey === "summary" ? "personal-field-summary" : ""
+                      }`}
+                      data-testid={`personal-field-${fieldKey}`}
+                    >
+                      <div className="field-header">
+                        <label>{PERSONAL_FIELD_LABELS[fieldKey]}</label>
+                        <div className="field-reorder-actions">
+                          <button
+                            type="button"
+                            className="btn-field-reorder"
+                            disabled={idx === 0}
+                            onClick={() => handleMovePersonalField(idx, -1)}
+                            data-testid={`btn-move-personal-${fieldKey}-up`}
+                            title={`Move ${PERSONAL_FIELD_LABELS[fieldKey]} up`}
+                          >
+                            <IconChevronUp size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-field-reorder"
+                            disabled={idx === effectivePersonalFieldOrder.length - 1}
+                            onClick={() => handleMovePersonalField(idx, 1)}
+                            data-testid={`btn-move-personal-${fieldKey}-down`}
+                            title={`Move ${PERSONAL_FIELD_LABELS[fieldKey]} down`}
+                          >
+                            <IconChevronDown size={12} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {fieldKey === "name" && (
+                        <input
+                          type="text"
+                          placeholder="e.g. Alex Morgan"
+                          value={data.personal.name || ""}
+                          onChange={(e) => handlePersonalChange("name", e.target.value)}
+                          data-testid="input-personal-name"
+                        />
+                      )}
+                      {fieldKey === "title" && (
+                        <input
+                          type="text"
+                          placeholder="e.g. Senior Software Engineer"
+                          value={data.personal.title || ""}
+                          onChange={(e) => handlePersonalChange("title", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "email" && (
+                        <input
+                          type="email"
+                          placeholder="alex@example.com"
+                          value={data.personal.email || ""}
+                          onChange={(e) => handlePersonalChange("email", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "phone" && (
+                        <input
+                          type="tel"
+                          placeholder="+1 (555) 019-2834"
+                          value={data.personal.phone || ""}
+                          onChange={(e) => handlePersonalChange("phone", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "location" && (
+                        <input
+                          type="text"
+                          placeholder="San Francisco, CA"
+                          value={data.personal.location || ""}
+                          onChange={(e) => handlePersonalChange("location", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "website" && (
+                        <input
+                          type="text"
+                          placeholder="https://alexmorgan.dev"
+                          value={data.personal.website || ""}
+                          onChange={(e) => handlePersonalChange("website", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "linkedin" && (
+                        <input
+                          type="text"
+                          placeholder="linkedin.com/in/alexmorgan"
+                          value={data.personal.linkedin || ""}
+                          onChange={(e) => handlePersonalChange("linkedin", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "github" && (
+                        <input
+                          type="text"
+                          placeholder="github.com/alexmorgan"
+                          value={data.personal.github || ""}
+                          onChange={(e) => handlePersonalChange("github", e.target.value)}
+                        />
+                      )}
+                      {fieldKey === "summary" && (
+                        <textarea
+                          rows={3}
+                          placeholder="Brief summary of your professional background and core strengths..."
+                          value={data.personal.summary || ""}
+                          onChange={(e) => handlePersonalChange("summary", e.target.value)}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {renderTraversalFooter("personal")}
+              </>
+            )}
+
+            {/* EXPERIENCE CARD BODY */}
+            {sectionKey === "experience" && (
+              <>
+                <div className="field-order-hint">
+                  Field ordering within experience entries is synchronized across all entries.
+                </div>
+                {data.experience.map((exp, expIdx) => (
+                  <div
+                    key={exp.id}
+                    className="entry-card"
+                    data-testid={`experience-item-${expIdx}`}
+                  >
+                    <div className="entry-header">
+                      <div className="entry-title-group">
+                        <h4>{exp.role || exp.company || `Role #${expIdx + 1}`}</h4>
+                        <span className="entry-index-badge">#{expIdx + 1}</span>
+                      </div>
+                      <div className="entry-actions">
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={expIdx === 0}
+                          onClick={() => handleMoveExperience(expIdx, -1)}
+                          data-testid={`btn-move-experience-up-${expIdx}`}
+                          title="Move experience entry up"
+                        >
+                          <IconChevronUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={expIdx === data.experience.length - 1}
+                          onClick={() => handleMoveExperience(expIdx, 1)}
+                          data-testid={`btn-move-experience-down-${expIdx}`}
+                          title="Move experience entry down"
+                        >
+                          <IconChevronDown size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger-icon"
+                          onClick={() => handleRemoveExperience(exp.id)}
+                          data-testid={`btn-remove-experience-${expIdx}`}
+                          title="Delete experience entry"
+                        >
+                          <IconTrash size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="experience-fields-container">
+                      {effectiveExperienceFieldOrder.map((fieldKey, fIdx) => (
+                        <div
+                          key={fieldKey}
+                          className="experience-field-item"
+                          data-testid={`exp-field-${fieldKey}-${expIdx}`}
+                        >
+                          <div className="field-header">
+                            <label>{EXPERIENCE_FIELD_LABELS[fieldKey]}</label>
+                            <div className="field-reorder-actions">
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === 0}
+                                onClick={() => handleMoveExperienceField(fIdx, -1)}
+                                data-testid={`btn-move-experience-${fieldKey}-up`}
+                                title={`Move ${EXPERIENCE_FIELD_LABELS[fieldKey]} up (reflects on all entries)`}
+                              >
+                                <IconChevronUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === effectiveExperienceFieldOrder.length - 1}
+                                onClick={() => handleMoveExperienceField(fIdx, 1)}
+                                data-testid={`btn-move-experience-${fieldKey}-down`}
+                                title={`Move ${EXPERIENCE_FIELD_LABELS[fieldKey]} down (reflects on all entries)`}
+                              >
+                                <IconChevronDown size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {fieldKey === "role" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Senior Software Engineer"
+                              value={exp.role}
+                              onChange={(e) =>
+                                handleUpdateExperience(exp.id, "role", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "company" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Acme Corp"
+                              value={exp.company}
+                              onChange={(e) =>
+                                handleUpdateExperience(exp.id, "company", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "location" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. San Francisco, CA"
+                              value={exp.location || ""}
+                              onChange={(e) =>
+                                handleUpdateExperience(exp.id, "location", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "dates" && (
+                            <div className="form-row-2">
+                              <div className="form-group">
+                                <label className="sub-label">Start Date</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Jan 2022"
+                                  value={exp.startDate || ""}
+                                  onChange={(e) =>
+                                    handleUpdateExperience(
+                                      exp.id,
+                                      "startDate",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div className="form-group">
+                                <label className="sub-label">End Date</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Present"
+                                  value={exp.endDate || ""}
+                                  onChange={(e) =>
+                                    handleUpdateExperience(
+                                      exp.id,
+                                      "endDate",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {fieldKey === "bullets" && (
+                            <div className="bullets-section">
+                              {exp.bullets.map((bullet, bIdx) => (
+                                <div key={bIdx} className="bullet-row">
+                                  <span className="bullet-dot">•</span>
+                                  <input
+                                    type="text"
+                                    placeholder="Describe key responsibilities or quantifiable results..."
+                                    value={bullet}
+                                    onChange={(e) =>
+                                      handleUpdateExpBullet(exp.id, bIdx, e.target.value)
+                                    }
+                                  />
+                                  <div className="bullet-actions">
+                                    <button
+                                      type="button"
+                                      className="btn-bullet-reorder"
+                                      disabled={bIdx === 0}
+                                      onClick={() => handleMoveExpBullet(exp.id, bIdx, -1)}
+                                      data-testid={`btn-move-exp-bullet-up-${exp.id}-${bIdx}`}
+                                      title="Move bullet up"
+                                    >
+                                      <IconChevronUp size={12} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-bullet-reorder"
+                                      disabled={bIdx === exp.bullets.length - 1}
+                                      onClick={() => handleMoveExpBullet(exp.id, bIdx, 1)}
+                                      data-testid={`btn-move-exp-bullet-down-${exp.id}-${bIdx}`}
+                                      title="Move bullet down"
+                                    >
+                                      <IconChevronDown size={12} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-bullet-remove"
+                                      onClick={() => handleRemoveExpBullet(exp.id, bIdx)}
+                                      data-testid={`btn-remove-exp-bullet-${exp.id}-${bIdx}`}
+                                      title="Remove bullet"
+                                    >
+                                      <IconX size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                className="btn-add-bullet"
+                                onClick={() => handleAddExpBullet(exp.id)}
+                              >
+                                <IconPlus size={13} />
+                                <span>Add Bullet</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="btn-add-entry"
+                  onClick={handleAddExperience}
+                  data-testid="btn-add-experience"
+                >
+                  <IconPlus size={14} />
+                  <span>Add Experience Entry</span>
+                </button>
+
+                {renderTraversalFooter("experience")}
+              </>
+            )}
+
+            {/* EDUCATION CARD BODY */}
+            {sectionKey === "education" && (
+              <>
+                {data.education.map((edu, eduIdx) => (
+                  <div
+                    key={edu.id}
+                    className="entry-card"
+                    data-testid={`education-item-${eduIdx}`}
+                  >
+                    <div className="entry-header">
+                      <div className="entry-title-group">
+                        <h4>{edu.degree || edu.institution || `Education #${eduIdx + 1}`}</h4>
+                        <span className="entry-index-badge">#{eduIdx + 1}</span>
+                      </div>
+                      <div className="entry-actions">
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={eduIdx === 0}
+                          onClick={() => handleMoveEducation(eduIdx, -1)}
+                          data-testid={`btn-move-education-up-${eduIdx}`}
+                          title="Move education entry up"
+                        >
+                          <IconChevronUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={eduIdx === data.education.length - 1}
+                          onClick={() => handleMoveEducation(eduIdx, 1)}
+                          data-testid={`btn-move-education-down-${eduIdx}`}
+                          title="Move education entry down"
+                        >
+                          <IconChevronDown size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger-icon"
+                          onClick={() => handleRemoveEducation(edu.id)}
+                          data-testid={`btn-remove-education-${eduIdx}`}
+                          title="Delete education entry"
+                        >
+                          <IconTrash size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="experience-fields-container">
+                      {effectiveEducationFieldOrder.map((fieldKey, fIdx) => (
+                        <div key={fieldKey} className="experience-field-item">
+                          <div className="field-header">
+                            <label>{EDUCATION_FIELD_LABELS[fieldKey]}</label>
+                            <div className="field-reorder-actions">
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === 0}
+                                onClick={() => handleMoveEducationField(fIdx, -1)}
+                                data-testid={`btn-move-education-${fieldKey}-up`}
+                                title={`Move ${EDUCATION_FIELD_LABELS[fieldKey]} up`}
+                              >
+                                <IconChevronUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === effectiveEducationFieldOrder.length - 1}
+                                onClick={() => handleMoveEducationField(fIdx, 1)}
+                                data-testid={`btn-move-education-${fieldKey}-down`}
+                                title={`Move ${EDUCATION_FIELD_LABELS[fieldKey]} down`}
+                              >
+                                <IconChevronDown size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {fieldKey === "degree" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. B.S. in Computer Science"
+                              value={edu.degree}
+                              onChange={(e) =>
+                                handleUpdateEducation(edu.id, "degree", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "institution" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. University of California, Berkeley"
+                              value={edu.institution}
+                              onChange={(e) =>
+                                handleUpdateEducation(edu.id, "institution", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "location" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Berkeley, CA"
+                              value={edu.location || ""}
+                              onChange={(e) =>
+                                handleUpdateEducation(edu.id, "location", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "dates" && (
+                            <div className="form-row-2">
+                              <div className="form-group">
+                                <label className="sub-label">Start Date</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 2017"
+                                  value={edu.startDate || ""}
+                                  onChange={(e) =>
+                                    handleUpdateEducation(
+                                      edu.id,
+                                      "startDate",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div className="form-group">
+                                <label className="sub-label">End Date</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 2021"
+                                  value={edu.endDate || ""}
+                                  onChange={(e) =>
+                                    handleUpdateEducation(
+                                      edu.id,
+                                      "endDate",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {fieldKey === "details" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Magna Cum Laude, GPA: 3.9/4.0, Algorithms"
+                              value={edu.details || ""}
+                              onChange={(e) =>
+                                handleUpdateEducation(edu.id, "details", e.target.value)
+                              }
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="btn-add-entry"
+                  onClick={handleAddEducation}
+                  data-testid="btn-add-education"
+                >
+                  <IconPlus size={14} />
+                  <span>Add Education Entry</span>
+                </button>
+
+                {renderTraversalFooter("education")}
+              </>
+            )}
+
+            {/* PROJECTS CARD BODY */}
+            {sectionKey === "projects" && (
+              <>
+                {data.projects.map((proj, pIdx) => (
+                  <div
+                    key={proj.id}
+                    className="entry-card"
+                    data-testid={`project-item-${pIdx}`}
+                  >
+                    <div className="entry-header">
+                      <div className="entry-title-group">
+                        <h4>{proj.name || `Project #${pIdx + 1}`}</h4>
+                        <span className="entry-index-badge">#{pIdx + 1}</span>
+                      </div>
+                      <div className="entry-actions">
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={pIdx === 0}
+                          onClick={() => handleMoveProject(pIdx, -1)}
+                          data-testid={`btn-move-project-up-${pIdx}`}
+                          title="Move project entry up"
+                        >
+                          <IconChevronUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={pIdx === data.projects.length - 1}
+                          onClick={() => handleMoveProject(pIdx, 1)}
+                          data-testid={`btn-move-project-down-${pIdx}`}
+                          title="Move project entry down"
+                        >
+                          <IconChevronDown size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger-icon"
+                          onClick={() => handleRemoveProject(proj.id)}
+                          data-testid={`btn-remove-project-${pIdx}`}
+                          title="Delete project entry"
+                        >
+                          <IconTrash size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="experience-fields-container">
+                      {effectiveProjectFieldOrder.map((fieldKey, fIdx) => (
+                        <div key={fieldKey} className="experience-field-item">
+                          <div className="field-header">
+                            <label>{PROJECT_FIELD_LABELS[fieldKey]}</label>
+                            <div className="field-reorder-actions">
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === 0}
+                                onClick={() => handleMoveProjectField(fIdx, -1)}
+                                data-testid={`btn-move-project-${fieldKey}-up`}
+                                title={`Move ${PROJECT_FIELD_LABELS[fieldKey]} up`}
+                              >
+                                <IconChevronUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === effectiveProjectFieldOrder.length - 1}
+                                onClick={() => handleMoveProjectField(fIdx, 1)}
+                                data-testid={`btn-move-project-${fieldKey}-down`}
+                                title={`Move ${PROJECT_FIELD_LABELS[fieldKey]} down`}
+                              >
+                                <IconChevronDown size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {fieldKey === "name" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Distributed Key-Value Store"
+                              value={proj.name}
+                              onChange={(e) =>
+                                handleUpdateProject(proj.id, "name", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "technologies" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Rust, Raft, gRPC, Tokio"
+                              value={proj.technologies || ""}
+                              onChange={(e) =>
+                                handleUpdateProject(
+                                  proj.id,
+                                  "technologies",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "link" && (
+                            <input
+                              type="text"
+                              placeholder="https://github.com/alex/project"
+                              value={proj.link || ""}
+                              onChange={(e) =>
+                                handleUpdateProject(proj.id, "link", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "bullets" && (
+                            <div className="bullets-section">
+                              {proj.bullets.map((bullet, bIdx) => (
+                                <div key={bIdx} className="bullet-row">
+                                  <span className="bullet-dot">•</span>
+                                  <input
+                                    type="text"
+                                    placeholder="Bullet describing implementation or impact..."
+                                    value={bullet}
+                                    onChange={(e) =>
+                                      handleUpdateProjBullet(proj.id, bIdx, e.target.value)
+                                    }
+                                  />
+                                  <div className="bullet-actions">
+                                    <button
+                                      type="button"
+                                      className="btn-bullet-reorder"
+                                      disabled={bIdx === 0}
+                                      onClick={() => handleMoveProjBullet(proj.id, bIdx, -1)}
+                                      data-testid={`btn-move-proj-bullet-up-${proj.id}-${bIdx}`}
+                                      title="Move bullet up"
+                                    >
+                                      <IconChevronUp size={12} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-bullet-reorder"
+                                      disabled={bIdx === proj.bullets.length - 1}
+                                      onClick={() => handleMoveProjBullet(proj.id, bIdx, 1)}
+                                      data-testid={`btn-move-proj-bullet-down-${proj.id}-${bIdx}`}
+                                      title="Move bullet down"
+                                    >
+                                      <IconChevronDown size={12} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-bullet-remove"
+                                      onClick={() => handleRemoveProjBullet(proj.id, bIdx)}
+                                      title="Remove bullet"
+                                    >
+                                      <IconX size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                className="btn-add-bullet"
+                                onClick={() => handleAddProjBullet(proj.id)}
+                              >
+                                <IconPlus size={13} />
+                                <span>Add Bullet</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="btn-add-entry"
+                  onClick={handleAddProject}
+                  data-testid="btn-add-project"
+                >
+                  <IconPlus size={14} />
+                  <span>Add Project Entry</span>
+                </button>
+
+                {renderTraversalFooter("projects")}
+              </>
+            )}
+
+            {/* SKILLS CARD BODY */}
+            {sectionKey === "skills" && (
+              <>
+                {data.skills.map((skill, sIdx) => (
+                  <div
+                    key={skill.id}
+                    className="entry-card"
+                    data-testid={`skill-item-${sIdx}`}
+                  >
+                    <div className="entry-header">
+                      <div className="entry-title-group">
+                        <h4>{skill.category || `Category #${sIdx + 1}`}</h4>
+                        <span className="entry-index-badge">#{sIdx + 1}</span>
+                      </div>
+                      <div className="entry-actions">
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={sIdx === 0}
+                          onClick={() => handleMoveSkill(sIdx, -1)}
+                          data-testid={`btn-move-skill-up-${sIdx}`}
+                          title="Move skill category up"
+                        >
+                          <IconChevronUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={sIdx === data.skills.length - 1}
+                          onClick={() => handleMoveSkill(sIdx, 1)}
+                          data-testid={`btn-move-skill-down-${sIdx}`}
+                          title="Move skill category down"
+                        >
+                          <IconChevronDown size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger-icon"
+                          onClick={() => handleRemoveSkill(skill.id)}
+                          data-testid={`btn-remove-skill-${sIdx}`}
+                          title="Delete skill category"
+                        >
+                          <IconTrash size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="experience-fields-container">
+                      {effectiveSkillFieldOrder.map((fieldKey, fIdx) => (
+                        <div key={fieldKey} className="experience-field-item">
+                          <div className="field-header">
+                            <label>{SKILL_FIELD_LABELS[fieldKey]}</label>
+                            <div className="field-reorder-actions">
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === 0}
+                                onClick={() => handleMoveSkillField(fIdx, -1)}
+                                data-testid={`btn-move-skill-${fieldKey}-up`}
+                                title={`Move ${SKILL_FIELD_LABELS[fieldKey]} up`}
+                              >
+                                <IconChevronUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-field-reorder"
+                                disabled={fIdx === effectiveSkillFieldOrder.length - 1}
+                                onClick={() => handleMoveSkillField(fIdx, 1)}
+                                data-testid={`btn-move-skill-${fieldKey}-down`}
+                                title={`Move ${SKILL_FIELD_LABELS[fieldKey]} down`}
+                              >
+                                <IconChevronDown size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {fieldKey === "category" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Languages, Frameworks, Cloud"
+                              value={skill.category}
+                              onChange={(e) =>
+                                handleUpdateSkill(skill.id, "category", e.target.value)
+                              }
+                            />
+                          )}
+
+                          {fieldKey === "skills" && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Rust, TypeScript, Python, Docker"
+                              value={skill.skills}
+                              onChange={(e) =>
+                                handleUpdateSkill(skill.id, "skills", e.target.value)
+                              }
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="btn-add-entry"
+                  onClick={handleAddSkill}
+                  data-testid="btn-add-skill"
+                >
+                  <IconPlus size={14} />
+                  <span>Add Skill Category</span>
+                </button>
+
+                {renderTraversalFooter("skills")}
+              </>
+            )}
+
+            {/* CUSTOM CARD BODY */}
+            {sectionKey === "custom" && (
+              <>
+                {customFields.map((field) => (
+                  <div key={field.key} className="form-group">
+                    <label>{field.label}</label>
+                    {field.type === "textarea" ? (
+                      <textarea
+                        rows={3}
+                        value={data.customVariables?.[field.key] || ""}
+                        onChange={(e) =>
+                          handleCustomVariableChange(field.key, e.target.value)
+                        }
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={data.customVariables?.[field.key] || ""}
+                        onChange={(e) =>
+                          handleCustomVariableChange(field.key, e.target.value)
+                        }
+                      />
+                    )}
+                  </div>
+                ))}
+
+                {(data.customSections || []).map((sec, secIdx) => (
+                  <div key={sec.id} className="entry-card">
+                    <div className="entry-header">
+                      <div className="entry-title-group">
+                        <h4>{sec.title || `Custom Section #${secIdx + 1}`}</h4>
+                        <span className="entry-index-badge">#{secIdx + 1}</span>
+                      </div>
+                      <div className="entry-actions">
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={secIdx === 0}
+                          onClick={() => handleMoveCustomSection(secIdx, -1)}
+                          data-testid={`btn-move-custom-up-${secIdx}`}
+                          title="Move custom section up"
+                        >
+                          <IconChevronUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-entry-reorder"
+                          disabled={
+                            secIdx === (data.customSections || []).length - 1
+                          }
+                          onClick={() => handleMoveCustomSection(secIdx, 1)}
+                          data-testid={`btn-move-custom-down-${secIdx}`}
+                          title="Move custom section down"
+                        >
+                          <IconChevronDown size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger-icon"
+                          onClick={() => handleRemoveCustomSection(sec.id)}
+                          data-testid={`btn-remove-custom-${secIdx}`}
+                          title="Delete custom section"
+                        >
+                          <IconTrash size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Section Title</label>
+                      <input
+                        type="text"
+                        value={sec.title}
+                        onChange={(e) =>
+                          handleUpdateCustomSection(sec.id, "title", e.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Content</label>
+                      <textarea
+                        rows={2}
+                        value={sec.content || ""}
+                        onChange={(e) =>
+                          handleUpdateCustomSection(sec.id, "content", e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="btn-add-entry"
+                  onClick={handleAddCustomSection}
+                >
+                  <IconPlus size={14} />
+                  <span>Add Custom Section</span>
+                </button>
+
+                {renderTraversalFooter("custom")}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="resume-form-container" data-testid="resume-form">
       {/* Template Header Banner */}
@@ -457,824 +1806,56 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             data-testid="section-tab-all"
             title="Show all resume sections at once"
           >
-            <span className="tab-icon"><IconLayers size={14} /></span>
+            <span className="tab-icon">
+              <IconLayers size={14} />
+            </span>
             <span className="tab-label">All</span>
           </button>
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === "personal"}
-            className={`section-tab-btn ${activeSection === "personal" ? "active" : ""}`}
-            onClick={() => handleTabChange("personal")}
-            data-testid="section-tab-personal"
-            title="Personal information & contact details"
-          >
-            <span className="tab-icon"><IconUser size={14} /></span>
-            <span className="tab-label">Personal</span>
-          </button>
+          {effectiveSectionOrder.map((secKey) => {
+            const meta = SECTION_METADATA[secKey];
+            if (!meta) return null;
+            const Icon = meta.icon;
+            let count: number | undefined;
+            if (secKey === "experience") count = data.experience.length;
+            else if (secKey === "education") count = data.education.length;
+            else if (secKey === "projects") count = data.projects.length;
+            else if (secKey === "skills") count = data.skills.length;
+            else if (secKey === "custom")
+              count = (data.customSections?.length || 0) + customFields.length;
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === "experience"}
-            className={`section-tab-btn ${activeSection === "experience" ? "active" : ""}`}
-            onClick={() => handleTabChange("experience")}
-            data-testid="section-tab-experience"
-            title="Work experience and employment history"
-          >
-            <span className="tab-icon"><IconBriefcase size={14} /></span>
-            <span className="tab-label">Experience</span>
-            <span className="section-badge">{data.experience.length}</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === "education"}
-            className={`section-tab-btn ${activeSection === "education" ? "active" : ""}`}
-            onClick={() => handleTabChange("education")}
-            data-testid="section-tab-education"
-            title="Degrees, schools, and credentials"
-          >
-            <span className="tab-icon"><IconGraduationCap size={14} /></span>
-            <span className="tab-label">Education</span>
-            <span className="section-badge">{data.education.length}</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === "projects"}
-            className={`section-tab-btn ${activeSection === "projects" ? "active" : ""}`}
-            onClick={() => handleTabChange("projects")}
-            data-testid="section-tab-projects"
-            title="Side projects and portfolio items"
-          >
-            <span className="tab-icon"><IconFolder size={14} /></span>
-            <span className="tab-label">Projects</span>
-            <span className="section-badge">{data.projects.length}</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === "skills"}
-            className={`section-tab-btn ${activeSection === "skills" ? "active" : ""}`}
-            onClick={() => handleTabChange("skills")}
-            data-testid="section-tab-skills"
-            title="Skills and technologies"
-          >
-            <span className="tab-icon"><IconWrench size={14} /></span>
-            <span className="tab-label">Skills</span>
-            <span className="section-badge">{data.skills.length}</span>
-          </button>
-
-          {hasCustom && (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSection === "custom"}
-              className={`section-tab-btn ${activeSection === "custom" ? "active" : ""}`}
-              onClick={() => handleTabChange("custom")}
-              data-testid="section-tab-custom"
-              title="Template custom variables and extra sections"
-            >
-              <span className="tab-icon"><IconSparkles size={14} /></span>
-              <span className="tab-label">Custom</span>
-              <span className="section-badge">
-                {(data.customSections?.length || 0) + customFields.length}
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 1. PERSONAL INFORMATION */}
-      {(activeSection === "all" || activeSection === "personal") && (
-        <div className="form-card" data-testid="section-card-personal">
-          <div
-            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
-            onClick={() => toggleSection("personal")}
-            role={activeSection === "all" ? "button" : undefined}
-            tabIndex={activeSection === "all" ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                toggleSection("personal");
-              }
-            }}
-          >
-            <div className="header-title">
-              <span className="icon"><IconUser size={16} /></span>
-              <h3>Personal Information</h3>
-            </div>
-            {activeSection === "all" && (
-              <div className="header-actions">
-                <span className="toggle-indicator">
-                  {collapsedSections["personal"] ? (
-                    <IconChevronDown size={14} />
-                  ) : (
-                    <IconChevronUp size={14} />
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(!collapsedSections["personal"] || activeSection === "personal") && (
-            <div className="form-card-body">
-            <div className="form-row-2">
-              <div className="form-group">
-                <label>Full Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Alex Morgan"
-                  value={data.personal.name || ""}
-                  onChange={(e) => handlePersonalChange("name", e.target.value)}
-                  data-testid="input-personal-name"
-                />
-              </div>
-              <div className="form-group">
-                <label>Job Title / Headline</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Senior Software Engineer"
-                  value={data.personal.title || ""}
-                  onChange={(e) => handlePersonalChange("title", e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-row-3">
-              <div className="form-group">
-                <label>Email</label>
-                <input
-                  type="email"
-                  placeholder="alex@example.com"
-                  value={data.personal.email || ""}
-                  onChange={(e) => handlePersonalChange("email", e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>Phone</label>
-                <input
-                  type="tel"
-                  placeholder="+1 (555) 019-2834"
-                  value={data.personal.phone || ""}
-                  onChange={(e) => handlePersonalChange("phone", e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>Location</label>
-                <input
-                  type="text"
-                  placeholder="San Francisco, CA"
-                  value={data.personal.location || ""}
-                  onChange={(e) => handlePersonalChange("location", e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-row-3">
-              <div className="form-group">
-                <label>Website / Portfolio</label>
-                <input
-                  type="text"
-                  placeholder="https://alexmorgan.dev"
-                  value={data.personal.website || ""}
-                  onChange={(e) => handlePersonalChange("website", e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>LinkedIn</label>
-                <input
-                  type="text"
-                  placeholder="linkedin.com/in/alexmorgan"
-                  value={data.personal.linkedin || ""}
-                  onChange={(e) => handlePersonalChange("linkedin", e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>GitHub</label>
-                <input
-                  type="text"
-                  placeholder="github.com/alexmorgan"
-                  value={data.personal.github || ""}
-                  onChange={(e) => handlePersonalChange("github", e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label>Professional Summary</label>
-              <textarea
-                rows={3}
-                placeholder="Brief summary of your professional background and core strengths..."
-                value={data.personal.summary || ""}
-                onChange={(e) => handlePersonalChange("summary", e.target.value)}
-              />
-            </div>
-
-            {renderTraversalFooter("personal")}
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* 2. EXPERIENCE */}
-      {(activeSection === "all" || activeSection === "experience") && (
-        <div className="form-card" data-testid="section-card-experience">
-          <div
-            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
-            onClick={() => toggleSection("experience")}
-            role={activeSection === "all" ? "button" : undefined}
-            tabIndex={activeSection === "all" ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                toggleSection("experience");
-              }
-            }}
-          >
-            <div className="header-title">
-              <span className="icon"><IconBriefcase size={16} /></span>
-              <h3>Experience ({data.experience.length})</h3>
-            </div>
-            {activeSection === "all" && (
-              <div className="header-actions">
-                <span className="toggle-indicator">
-                  {collapsedSections["experience"] ? (
-                    <IconChevronDown size={14} />
-                  ) : (
-                    <IconChevronUp size={14} />
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(!collapsedSections["experience"] || activeSection === "experience") && (
-            <div className="form-card-body">
-            {data.experience.map((exp, expIdx) => (
-              <div key={exp.id} className="entry-card" data-testid={`experience-item-${expIdx}`}>
-                <div className="entry-header">
-                  <h4>{exp.role || exp.company || `Role #${expIdx + 1}`}</h4>
-                  <button
-                    type="button"
-                    className="btn-danger-icon"
-                    onClick={() => handleRemoveExperience(exp.id)}
-                    title="Delete experience entry"
-                  >
-                    <IconTrash size={13} />
-                    <span>Remove</span>
-                  </button>
-                </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Role / Position</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Senior Software Engineer"
-                      value={exp.role}
-                      onChange={(e) => handleUpdateExperience(exp.id, "role", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Company / Organization</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Acme Corp"
-                      value={exp.company}
-                      onChange={(e) => handleUpdateExperience(exp.id, "company", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row-3">
-                  <div className="form-group">
-                    <label>Location</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. San Francisco, CA"
-                      value={exp.location || ""}
-                      onChange={(e) => handleUpdateExperience(exp.id, "location", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Start Date</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Jan 2022"
-                      value={exp.startDate || ""}
-                      onChange={(e) => handleUpdateExperience(exp.id, "startDate", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>End Date</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Present"
-                      value={exp.endDate || ""}
-                      onChange={(e) => handleUpdateExperience(exp.id, "endDate", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* Bullets */}
-                <div className="bullets-section">
-                  <label className="bullets-label">Key Achievements / Bullets</label>
-                  {exp.bullets.map((bullet, bIdx) => (
-                    <div key={bIdx} className="bullet-row">
-                      <span className="bullet-dot">•</span>
-                      <input
-                        type="text"
-                        placeholder="Describe key responsibilities or quantifiable results..."
-                        value={bullet}
-                        onChange={(e) => handleUpdateExpBullet(exp.id, bIdx, e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="btn-bullet-remove"
-                        onClick={() => handleRemoveExpBullet(exp.id, bIdx)}
-                        title="Remove bullet"
-                      >
-                        <IconX size={13} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="btn-add-bullet"
-                    onClick={() => handleAddExpBullet(exp.id)}
-                  >
-                    <IconPlus size={13} />
-                    <span>Add Bullet</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="btn-add-entry"
-              onClick={handleAddExperience}
-              data-testid="btn-add-experience"
-            >
-              <IconPlus size={14} />
-              <span>Add Experience Entry</span>
-            </button>
-
-            {renderTraversalFooter("experience")}
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* 3. EDUCATION */}
-      {(activeSection === "all" || activeSection === "education") && (
-        <div className="form-card" data-testid="section-card-education">
-          <div
-            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
-            onClick={() => toggleSection("education")}
-            role={activeSection === "all" ? "button" : undefined}
-            tabIndex={activeSection === "all" ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                toggleSection("education");
-              }
-            }}
-          >
-            <div className="header-title">
-              <span className="icon"><IconGraduationCap size={16} /></span>
-              <h3>Education ({data.education.length})</h3>
-            </div>
-            {activeSection === "all" && (
-              <div className="header-actions">
-                <span className="toggle-indicator">
-                  {collapsedSections["education"] ? (
-                    <IconChevronDown size={14} />
-                  ) : (
-                    <IconChevronUp size={14} />
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(!collapsedSections["education"] || activeSection === "education") && (
-            <div className="form-card-body">
-            {data.education.map((edu, eduIdx) => (
-              <div key={edu.id} className="entry-card" data-testid={`education-item-${eduIdx}`}>
-                <div className="entry-header">
-                  <h4>{edu.degree || edu.institution || `Education #${eduIdx + 1}`}</h4>
-                  <button
-                    type="button"
-                    className="btn-danger-icon"
-                    onClick={() => handleRemoveEducation(edu.id)}
-                    title="Delete education entry"
-                  >
-                    <IconTrash size={13} />
-                    <span>Remove</span>
-                  </button>
-                </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Degree / Certificate</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. B.S. in Computer Science"
-                      value={edu.degree}
-                      onChange={(e) => handleUpdateEducation(edu.id, "degree", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Institution / University</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. University of California, Berkeley"
-                      value={edu.institution}
-                      onChange={(e) => handleUpdateEducation(edu.id, "institution", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row-3">
-                  <div className="form-group">
-                    <label>Location</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Berkeley, CA"
-                      value={edu.location || ""}
-                      onChange={(e) => handleUpdateEducation(edu.id, "location", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Start Date</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2017"
-                      value={edu.startDate || ""}
-                      onChange={(e) => handleUpdateEducation(edu.id, "startDate", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>End Date</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2021"
-                      value={edu.endDate || ""}
-                      onChange={(e) => handleUpdateEducation(edu.id, "endDate", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Honors, GPA or Relevant Coursework</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Magna Cum Laude, GPA: 3.9/4.0, Algorithms, Distributed Systems"
-                    value={edu.details || ""}
-                    onChange={(e) => handleUpdateEducation(edu.id, "details", e.target.value)}
-                  />
-                </div>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="btn-add-entry"
-              onClick={handleAddEducation}
-              data-testid="btn-add-education"
-            >
-              <IconPlus size={14} />
-              <span>Add Education Entry</span>
-            </button>
-
-            {renderTraversalFooter("education")}
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* 4. PROJECTS */}
-      {(activeSection === "all" || activeSection === "projects") && (
-        <div className="form-card" data-testid="section-card-projects">
-          <div
-            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
-            onClick={() => toggleSection("projects")}
-            role={activeSection === "all" ? "button" : undefined}
-            tabIndex={activeSection === "all" ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                toggleSection("projects");
-              }
-            }}
-          >
-            <div className="header-title">
-              <span className="icon"><IconFolder size={16} /></span>
-              <h3>Projects ({data.projects.length})</h3>
-            </div>
-            {activeSection === "all" && (
-              <div className="header-actions">
-                <span className="toggle-indicator">
-                  {collapsedSections["projects"] ? (
-                    <IconChevronDown size={14} />
-                  ) : (
-                    <IconChevronUp size={14} />
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(!collapsedSections["projects"] || activeSection === "projects") && (
-            <div className="form-card-body">
-            {data.projects.map((proj, pIdx) => (
-              <div key={proj.id} className="entry-card" data-testid={`project-item-${pIdx}`}>
-                <div className="entry-header">
-                  <h4>{proj.name || `Project #${pIdx + 1}`}</h4>
-                  <button
-                    type="button"
-                    className="btn-danger-icon"
-                    onClick={() => handleRemoveProject(proj.id)}
-                    title="Delete project entry"
-                  >
-                    <IconTrash size={13} />
-                    <span>Remove</span>
-                  </button>
-                </div>
-
-                <div className="form-row-3">
-                  <div className="form-group">
-                    <label>Project Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Distributed Key-Value Store"
-                      value={proj.name}
-                      onChange={(e) => handleUpdateProject(proj.id, "name", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Tech Stack / Technologies</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rust, Raft, gRPC, Tokio"
-                      value={proj.technologies || ""}
-                      onChange={(e) => handleUpdateProject(proj.id, "technologies", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Project Link / URL</label>
-                    <input
-                      type="text"
-                      placeholder="https://github.com/alex/project"
-                      value={proj.link || ""}
-                      onChange={(e) => handleUpdateProject(proj.id, "link", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* Bullets */}
-                <div className="bullets-section">
-                  <label className="bullets-label">Project Highlights</label>
-                  {proj.bullets.map((bullet, bIdx) => (
-                    <div key={bIdx} className="bullet-row">
-                      <span className="bullet-dot">•</span>
-                      <input
-                        type="text"
-                        placeholder="Bullet describing implementation or impact..."
-                        value={bullet}
-                        onChange={(e) => handleUpdateProjBullet(proj.id, bIdx, e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="btn-bullet-remove"
-                        onClick={() => handleRemoveProjBullet(proj.id, bIdx)}
-                        title="Remove bullet"
-                      >
-                        <IconX size={13} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="btn-add-bullet"
-                    onClick={() => handleAddProjBullet(proj.id)}
-                  >
-                    <IconPlus size={13} />
-                    <span>Add Bullet</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="btn-add-entry"
-              onClick={handleAddProject}
-              data-testid="btn-add-project"
-            >
-              <IconPlus size={14} />
-              <span>Add Project Entry</span>
-            </button>
-
-            {renderTraversalFooter("projects")}
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* 5. SKILLS */}
-      {(activeSection === "all" || activeSection === "skills") && (
-        <div className="form-card" data-testid="section-card-skills">
-          <div
-            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
-            onClick={() => toggleSection("skills")}
-            role={activeSection === "all" ? "button" : undefined}
-            tabIndex={activeSection === "all" ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                toggleSection("skills");
-              }
-            }}
-          >
-            <div className="header-title">
-              <span className="icon"><IconWrench size={16} /></span>
-              <h3>Skills & Technologies ({data.skills.length})</h3>
-            </div>
-            {activeSection === "all" && (
-              <div className="header-actions">
-                <span className="toggle-indicator">
-                  {collapsedSections["skills"] ? (
-                    <IconChevronDown size={14} />
-                  ) : (
-                    <IconChevronUp size={14} />
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(!collapsedSections["skills"] || activeSection === "skills") && (
-            <div className="form-card-body">
-            {data.skills.map((skill, sIdx) => (
-              <div key={skill.id} className="entry-card" data-testid={`skill-item-${sIdx}`}>
-                <div className="entry-header">
-                  <h4>{skill.category || `Category #${sIdx + 1}`}</h4>
-                  <button
-                    type="button"
-                    className="btn-danger-icon"
-                    onClick={() => handleRemoveSkill(skill.id)}
-                    title="Delete skill category"
-                  >
-                    <IconTrash size={13} />
-                    <span>Remove</span>
-                  </button>
-                </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Category</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Languages, Frameworks, Cloud"
-                      value={skill.category}
-                      onChange={(e) => handleUpdateSkill(skill.id, "category", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Skills / Items (comma separated)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rust, TypeScript, Python, Docker"
-                      value={skill.skills}
-                      onChange={(e) => handleUpdateSkill(skill.id, "skills", e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="btn-add-entry"
-              onClick={handleAddSkill}
-              data-testid="btn-add-skill"
-            >
-              <IconPlus size={14} />
-              <span>Add Skill Category</span>
-            </button>
-
-            {renderTraversalFooter("skills")}
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* 6. TEMPLATE CUSTOM FIELDS & SECTIONS */}
-      {hasCustom && (activeSection === "all" || activeSection === "custom") && (
-        <div className="form-card" data-testid="section-card-custom">
-          <div
-            className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
-            onClick={() => toggleSection("custom")}
-            role={activeSection === "all" ? "button" : undefined}
-            tabIndex={activeSection === "all" ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-                e.preventDefault();
-                toggleSection("custom");
-              }
-            }}
-          >
-            <div className="header-title">
-              <span className="icon"><IconSparkles size={16} /></span>
-              <h3>Template Custom Fields & Sections</h3>
-            </div>
-            {activeSection === "all" && (
-              <div className="header-actions">
-                <span className="toggle-indicator">
-                  {collapsedSections["custom"] ? (
-                    <IconChevronDown size={14} />
-                  ) : (
-                    <IconChevronUp size={14} />
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(!collapsedSections["custom"] || activeSection === "custom") && (
-            <div className="form-card-body">
-              {customFields.map((field) => (
-                <div key={field.key} className="form-group">
-                  <label>{field.label}</label>
-                  {field.type === "textarea" ? (
-                    <textarea
-                      rows={3}
-                      value={data.customVariables?.[field.key] || ""}
-                      onChange={(e) => handleCustomVariableChange(field.key, e.target.value)}
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={data.customVariables?.[field.key] || ""}
-                      onChange={(e) => handleCustomVariableChange(field.key, e.target.value)}
-                    />
-                  )}
-                </div>
-              ))}
-
-              {(data.customSections || []).map((sec, secIdx) => (
-                <div key={sec.id} className="entry-card">
-                  <div className="entry-header">
-                    <h4>{sec.title || `Custom Section #${secIdx + 1}`}</h4>
-                    <button
-                      type="button"
-                      className="btn-danger-icon"
-                      onClick={() => handleRemoveCustomSection(sec.id)}
-                    >
-                      <IconTrash size={13} />
-                      <span>Remove</span>
-                    </button>
-                  </div>
-                  <div className="form-group">
-                    <label>Section Title</label>
-                    <input
-                      type="text"
-                      value={sec.title}
-                      onChange={(e) => handleUpdateCustomSection(sec.id, "title", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Content</label>
-                    <textarea
-                      rows={2}
-                      value={sec.content || ""}
-                      onChange={(e) => handleUpdateCustomSection(sec.id, "content", e.target.value)}
-                    />
-                  </div>
-                </div>
-              ))}
-
+            return (
               <button
+                key={secKey}
                 type="button"
-                className="btn-add-entry"
-                onClick={handleAddCustomSection}
+                role="tab"
+                aria-selected={activeSection === secKey}
+                className={`section-tab-btn ${activeSection === secKey ? "active" : ""}`}
+                onClick={() => handleTabChange(secKey)}
+                data-testid={`section-tab-${secKey}`}
+                title={meta.label}
               >
-                <IconPlus size={14} />
-                <span>Add Custom Section</span>
+                <span className="tab-icon">
+                  <Icon size={14} />
+                </span>
+                <span className="tab-label">{meta.label}</span>
+                {count !== undefined && (
+                  <span className="section-badge">{count}</span>
+                )}
               </button>
-
-              {renderTraversalFooter("custom")}
-            </div>
-          )}
+            );
+          })}
         </div>
+      </div>
+
+      {/* RENDER SECTIONS */}
+      {activeSection === "all" ? (
+        effectiveSectionOrder.map((secKey, idx) => renderSectionCard(secKey, idx))
+      ) : (
+        renderSectionCard(
+          activeSection,
+          effectiveSectionOrder.indexOf(activeSection)
+        )
       )}
     </div>
   );

@@ -266,10 +266,120 @@ function processConditionals(
 }
 
 /**
+ * Reorders section blocks in LaTeX template content according to sectionOrder.
+ */
+export function reorderTemplateSections(
+  templateContent: string,
+  sectionOrder?: string[]
+): string {
+  if (!sectionOrder || sectionOrder.length === 0) {
+    return templateContent;
+  }
+
+  const sectionRegexes: Record<string, RegExp> = {
+    experience: /\{\{#experience\}\}[\s\S]*?\{\{\/experience\}\}/,
+    education: /\{\{#education\}\}[\s\S]*?\{\{\/education\}\}/,
+    projects: /\{\{#projects\}\}[\s\S]*?\{\{\/projects\}\}/,
+    skills: /\{\{#skills\}\}[\s\S]*?\{\{\/skills\}\}/,
+    custom: /\{\{#customSections\}\}[\s\S]*?\{\{\/customSections\}\}/,
+    customSections: /\{\{#customSections\}\}[\s\S]*?\{\{\/customSections\}\}/,
+  };
+
+  interface BlockMatch {
+    key: string;
+    start: number;
+    end: number;
+    content: string;
+  }
+
+  const matches: BlockMatch[] = [];
+
+  for (const [key, regex] of Object.entries(sectionRegexes)) {
+    if (key === "customSections" && matches.some((m) => m.key === "custom")) {
+      continue;
+    }
+    const match = regex.exec(templateContent);
+    if (match) {
+      matches.push({
+        key: key === "customSections" ? "custom" : key,
+        start: match.index,
+        end: match.index + match[0].length,
+        content: match[0],
+      });
+    }
+  }
+
+  if (matches.length < 2) {
+    return templateContent;
+  }
+
+  // Sort by start index
+  matches.sort((a, b) => a.start - b.start);
+
+  const normalizedOrder = sectionOrder
+    .map((s) => (s === "customSections" ? "custom" : s))
+    .filter((s) => s !== "personal");
+
+  const orderedBlocks: string[] = [];
+  const handledKeys = new Set<string>();
+
+  for (const key of normalizedOrder) {
+    const found = matches.find((m) => m.key === key);
+    if (found) {
+      orderedBlocks.push(found.content);
+      handledKeys.add(key);
+    }
+  }
+
+  for (const m of matches) {
+    if (!handledKeys.has(m.key)) {
+      orderedBlocks.push(m.content);
+    }
+  }
+
+  const firstBlock = matches[0];
+  const lastBlock = matches[matches.length - 1];
+  const span = templateContent.substring(firstBlock.start, lastBlock.end);
+
+  let remaining = span;
+  for (const m of matches) {
+    remaining = remaining.replace(m.content, "");
+  }
+
+  if (/^\s*$/.test(remaining)) {
+    return (
+      templateContent.substring(0, firstBlock.start) +
+      orderedBlocks.join("\n\n") +
+      templateContent.substring(lastBlock.end)
+    );
+  }
+
+  let result = templateContent;
+  let currentPos = 0;
+  for (let i = 0; i < matches.length; i++) {
+    const original = matches[i];
+    const replacement = orderedBlocks[i];
+    const idx = result.indexOf(original.content, currentPos);
+    if (idx !== -1) {
+      result =
+        result.substring(0, idx) +
+        replacement +
+        result.substring(idx + original.content.length);
+      currentPos = idx + replacement.length;
+    }
+  }
+  return result;
+}
+
+/**
  * Renders a full template given ResumeData.
  */
 export function renderTemplate(templateContent: string, resumeData: ResumeData): string {
   let output = templateContent;
+
+  if (resumeData.sectionOrder && resumeData.sectionOrder.length > 0) {
+    output = reorderTemplateSections(output, resumeData.sectionOrder);
+  }
 
   const personal = resumeData.personal || { name: "" };
   const customVars = resumeData.customVariables || {};

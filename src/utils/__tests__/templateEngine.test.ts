@@ -6,6 +6,7 @@ import {
   extractFieldsFromTemplate,
   convertRawLatexToTemplate,
   sanitizeLatexUrl,
+  reorderTemplateSections,
 } from "../templateEngine";
 import { BUILTIN_TEMPLATES } from "../templatePresets";
 import { ResumeData } from "../../types";
@@ -304,6 +305,72 @@ Name: {{name}}
       const rendered = renderTemplate(template, dataWithoutSummary);
       expect(rendered).not.toContain("\\section{Summary}");
       expect(rendered).toContain("Name: Arthur Dent \\& Co.");
+    });
+
+    it("reorders template sections according to sectionOrder", () => {
+      const template = `
+\\begin{document}
+{{#experience}}
+\\section{Experience}
+Work details
+{{/experience}}
+
+{{#education}}
+\\section{Education}
+School details
+{{/education}}
+
+{{#skills}}
+\\section{Skills}
+Skill details
+{{/skills}}
+\\end{document}
+      `;
+
+      // Reorder Education before Experience, and Skills before Experience
+      const reordered = reorderTemplateSections(template, [
+        "education",
+        "skills",
+        "experience",
+      ]);
+
+      const eduIdx = reordered.indexOf("{{#education}}");
+      const skillsIdx = reordered.indexOf("{{#skills}}");
+      const expIdx = reordered.indexOf("{{#experience}}");
+
+      expect(eduIdx).toBeLessThan(skillsIdx);
+      expect(skillsIdx).toBeLessThan(expIdx);
+    });
+
+    it("renders resume template with customized section order", () => {
+      const template = `
+{{#experience}}
+\\section{Experience}
+{{#items}}
+{{role}} at {{company}}
+{{/items}}
+{{/experience}}
+
+{{#education}}
+\\section{Education}
+{{#items}}
+{{degree}}
+{{/items}}
+{{/education}}
+      `;
+
+      const dataWithOrder: ResumeData = {
+        ...sampleData,
+        sectionOrder: ["personal", "education", "experience", "projects", "skills"],
+      };
+
+      const rendered = renderTemplate(template, dataWithOrder);
+      const eduPos = rendered.indexOf("\\section{Education}");
+      const expPos = rendered.indexOf("\\section{Experience}");
+
+      expect(eduPos).toBeGreaterThan(-1);
+      expect(expPos).toBeGreaterThan(-1);
+      expect(eduPos).toBeLessThan(expPos);
     });
   });
 
