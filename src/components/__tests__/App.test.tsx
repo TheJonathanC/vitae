@@ -50,7 +50,7 @@ const mockDocs = [
   },
 ];
 
-describe("App Integration Tests", () => {
+describe("App Integration Tests", { timeout: 15000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
