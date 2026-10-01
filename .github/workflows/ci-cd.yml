@@ -20,7 +20,7 @@ on:
           - beta
           - stable
       version:
-        description: 'Version string (optional, e.g. 1.1.0 or 1.1.0-beta.2)'
+        description: 'Version string (optional, e.g. 1.1.1 or 1.1.1-beta.2)'
         required: false
         type: string
 
@@ -95,6 +95,10 @@ jobs:
           $explicitChannel = "${{ inputs.channel }}"
           $explicitVersion = "${{ inputs.version }}"
           
+          # Read base version from package.json
+          $pkg = Get-Content ./package.json -Raw | ConvertFrom-Json
+          $baseVer = $pkg.version.TrimStart('v').Split('-')[0]
+
           # Tagged release: any tag not containing beta/alpha/rc is treated as stable
           if ($isTag) {
             $rawTag = "${{ github.ref_name }}"
@@ -112,7 +116,7 @@ jobs:
             if ($explicitVersion -and $explicitVersion.Trim() -ne "") {
               $ver = $explicitVersion.TrimStart('v')
             } else {
-              $ver = "1.1.0"
+              $ver = $baseVer
             }
             $tag = "v$ver"
             $isPrerelease = $false
@@ -122,7 +126,7 @@ jobs:
             if ($explicitVersion -and $explicitVersion.Trim() -ne "") {
               $ver = $explicitVersion.TrimStart('v')
             } else {
-              $ver = "1.1.0-beta.${{ github.run_number }}"
+              $ver = "$baseVer-beta.${{ github.run_number }}"
             }
             $tag = "v$ver"
             $isPrerelease = $true
