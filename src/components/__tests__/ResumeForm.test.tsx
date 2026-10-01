@@ -179,17 +179,22 @@ describe("ResumeForm component", () => {
     );
   });
 
-  it("allows reordering items in the personal info section (e.g. moving location and email)", () => {
+  it("allows reordering items in the personal info section (e.g. moving location and phone)", () => {
     const onChange = vi.fn();
     render(<ResumeForm data={initialData} onChange={onChange} />);
 
-    // Move email up (it is initially after title)
-    const moveEmailUp = screen.getByTestId("btn-move-personal-email-up");
-    fireEvent.click(moveEmailUp);
+    // Stationary fields must NOT have reorder arrows
+    expect(screen.queryByTestId("btn-move-personal-name-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-personal-title-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-personal-summary-up")).not.toBeInTheDocument();
+
+    // Move phone up (initially at index 1 after email)
+    const movePhoneUp = screen.getByTestId("btn-move-personal-phone-up");
+    fireEvent.click(movePhoneUp);
 
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
-        personalFieldOrder: expect.arrayContaining(["email", "name"]),
+        personalFieldOrder: expect.arrayContaining(["phone", "email"]),
       })
     );
 
@@ -223,31 +228,20 @@ describe("ResumeForm component", () => {
     );
   });
 
-  it("reordering experience fields updates field order and reflects on all entries", () => {
-    const onChange = vi.fn();
-    const { rerender } = render(<ResumeForm data={initialData} onChange={onChange} />);
+  it("keeps stationary fields fixed without reorder arrows across experience, education, projects, and skills", () => {
+    render(<ResumeForm data={initialData} onChange={vi.fn()} />);
 
-    // Click Move Up on company field in experience (initially at index 1 after role)
-    const moveCompanyUpBtns = screen.getAllByTestId("btn-move-experience-company-up");
-    expect(moveCompanyUpBtns.length).toBeGreaterThan(1);
-    fireEvent.click(moveCompanyUpBtns[0]);
+    // Stationary fields in entries must NOT have reorder arrows
+    expect(screen.queryByTestId("btn-move-experience-company-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-experience-role-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-education-degree-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-education-institution-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-project-name-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-skill-category-up")).not.toBeInTheDocument();
 
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        experienceFieldOrder: ["company", "role", "location", "dates", "bullets"],
-      })
-    );
-
-    // Rerender with the updated experienceFieldOrder to verify it reflects across ALL entries
-    const updatedData: ResumeData = {
-      ...initialData,
-      experienceFieldOrder: ["company", "role", "location", "dates", "bullets"],
-    };
-    rerender(<ResumeForm data={updatedData} onChange={onChange} />);
-
-    // Both entry 0 and entry 1 should have company field rendered first
-    expect(screen.getByTestId("exp-field-company-0")).toBeInTheDocument();
-    expect(screen.getByTestId("exp-field-company-1")).toBeInTheDocument();
+    // Entries themselves can still be reordered
+    expect(screen.getByTestId("btn-move-experience-up-1")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-move-experience-down-0")).toBeInTheDocument();
   });
 
   it("allows reordering bullets within an experience entry", () => {

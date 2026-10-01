@@ -6,7 +6,6 @@ import {
   ResumeProjectItem,
   ResumeSkillItem,
   ResumeCustomSection,
-  ResumePersonalInfo,
   ExtractedTemplateField,
 } from "../types";
 import {
@@ -45,85 +44,30 @@ interface ResumeFormProps {
   onChangeTemplateClick?: () => void;
 }
 
-type PersonalFieldKey = keyof ResumePersonalInfo;
-const DEFAULT_PERSONAL_FIELD_ORDER: PersonalFieldKey[] = [
-  "name",
-  "title",
+type ContactFieldKey =
+  | "email"
+  | "phone"
+  | "location"
+  | "website"
+  | "linkedin"
+  | "github";
+
+const DEFAULT_CONTACT_FIELD_ORDER: ContactFieldKey[] = [
   "email",
   "phone",
   "location",
   "website",
   "linkedin",
   "github",
-  "summary",
 ];
 
-const PERSONAL_FIELD_LABELS: Record<PersonalFieldKey, string> = {
-  name: "Full Name *",
-  title: "Job Title / Headline",
+const CONTACT_FIELD_LABELS: Record<ContactFieldKey, string> = {
   email: "Email",
   phone: "Phone",
   location: "Location",
   website: "Website / Portfolio",
   linkedin: "LinkedIn",
   github: "GitHub",
-  summary: "Professional Summary",
-};
-
-type ExperienceFieldKey = "role" | "company" | "location" | "dates" | "bullets";
-const DEFAULT_EXPERIENCE_FIELD_ORDER: ExperienceFieldKey[] = [
-  "role",
-  "company",
-  "location",
-  "dates",
-  "bullets",
-];
-
-const EXPERIENCE_FIELD_LABELS: Record<ExperienceFieldKey, string> = {
-  role: "Role / Position",
-  company: "Company / Organization",
-  location: "Location",
-  dates: "Dates / Duration",
-  bullets: "Key Achievements / Bullets",
-};
-
-type EducationFieldKey = "degree" | "institution" | "location" | "dates" | "details";
-const DEFAULT_EDUCATION_FIELD_ORDER: EducationFieldKey[] = [
-  "degree",
-  "institution",
-  "location",
-  "dates",
-  "details",
-];
-
-const EDUCATION_FIELD_LABELS: Record<EducationFieldKey, string> = {
-  degree: "Degree / Certificate",
-  institution: "Institution / University",
-  location: "Location",
-  dates: "Dates",
-  details: "Honors, GPA or Coursework",
-};
-
-type ProjectFieldKey = "name" | "technologies" | "link" | "bullets";
-const DEFAULT_PROJECT_FIELD_ORDER: ProjectFieldKey[] = [
-  "name",
-  "technologies",
-  "link",
-  "bullets",
-];
-
-const PROJECT_FIELD_LABELS: Record<ProjectFieldKey, string> = {
-  name: "Project Name",
-  technologies: "Tech Stack / Technologies",
-  link: "Project Link / URL",
-  bullets: "Project Highlights",
-};
-
-type SkillFieldKey = "category" | "skills";
-const DEFAULT_SKILL_FIELD_ORDER: SkillFieldKey[] = ["category", "skills"];
-const SKILL_FIELD_LABELS: Record<SkillFieldKey, string> = {
-  category: "Category",
-  skills: "Skills / Items",
 };
 
 export const ResumeForm: React.FC<ResumeFormProps> = ({
@@ -217,15 +161,15 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     });
   };
 
-  // Personal fields reordering
-  const effectivePersonalFieldOrder: PersonalFieldKey[] = (() => {
+  // Contact fields reordering within Personal Info
+  const effectiveContactFieldOrder: ContactFieldKey[] = (() => {
     if (!data.personalFieldOrder || !Array.isArray(data.personalFieldOrder)) {
-      return DEFAULT_PERSONAL_FIELD_ORDER;
+      return DEFAULT_CONTACT_FIELD_ORDER;
     }
     const filtered = data.personalFieldOrder.filter((f) =>
-      DEFAULT_PERSONAL_FIELD_ORDER.includes(f as any)
-    ) as PersonalFieldKey[];
-    for (const f of DEFAULT_PERSONAL_FIELD_ORDER) {
+      DEFAULT_CONTACT_FIELD_ORDER.includes(f as any)
+    ) as ContactFieldKey[];
+    for (const f of DEFAULT_CONTACT_FIELD_ORDER) {
       if (!filtered.includes(f)) {
         filtered.push(f);
       }
@@ -233,15 +177,17 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     return filtered;
   })();
 
-  const handleMovePersonalField = (fieldIdx: number, delta: -1 | 1) => {
-    const newIdx = fieldIdx + delta;
-    if (newIdx < 0 || newIdx >= effectivePersonalFieldOrder.length) return;
-    const newOrder = [...effectivePersonalFieldOrder];
-    const [moved] = newOrder.splice(fieldIdx, 1);
-    newOrder.splice(newIdx, 0, moved);
+  const handleMoveContactField = (contactIdx: number, delta: -1 | 1) => {
+    const newIdx = contactIdx + delta;
+    if (newIdx < 0 || newIdx >= effectiveContactFieldOrder.length) return;
+    const newContactOrder = [...effectiveContactFieldOrder];
+    const [moved] = newContactOrder.splice(contactIdx, 1);
+    newContactOrder.splice(newIdx, 0, moved);
+
+    const fullOrder: string[] = ["name", "title", ...newContactOrder, "summary"];
     onChange({
       ...data,
-      personalFieldOrder: newOrder,
+      personalFieldOrder: fullOrder,
     });
   };
 
@@ -252,34 +198,6 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
         ...data.personal,
         [field]: value,
       },
-    });
-  };
-
-  // Experience handlers
-  const effectiveExperienceFieldOrder: ExperienceFieldKey[] = (() => {
-    if (!data.experienceFieldOrder || !Array.isArray(data.experienceFieldOrder)) {
-      return DEFAULT_EXPERIENCE_FIELD_ORDER;
-    }
-    const filtered = data.experienceFieldOrder.filter((f) =>
-      DEFAULT_EXPERIENCE_FIELD_ORDER.includes(f as any)
-    ) as ExperienceFieldKey[];
-    for (const f of DEFAULT_EXPERIENCE_FIELD_ORDER) {
-      if (!filtered.includes(f)) {
-        filtered.push(f);
-      }
-    }
-    return filtered;
-  })();
-
-  const handleMoveExperienceField = (fieldIdx: number, delta: -1 | 1) => {
-    const newIdx = fieldIdx + delta;
-    if (newIdx < 0 || newIdx >= effectiveExperienceFieldOrder.length) return;
-    const newOrder = [...effectiveExperienceFieldOrder];
-    const [moved] = newOrder.splice(fieldIdx, 1);
-    newOrder.splice(newIdx, 0, moved);
-    onChange({
-      ...data,
-      experienceFieldOrder: newOrder,
     });
   };
 
@@ -377,31 +295,6 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   // Education handlers
-  const effectiveEducationFieldOrder: EducationFieldKey[] = (() => {
-    if (!data.educationFieldOrder || !Array.isArray(data.educationFieldOrder)) {
-      return DEFAULT_EDUCATION_FIELD_ORDER;
-    }
-    const filtered = data.educationFieldOrder.filter((f) =>
-      DEFAULT_EDUCATION_FIELD_ORDER.includes(f as any)
-    ) as EducationFieldKey[];
-    for (const f of DEFAULT_EDUCATION_FIELD_ORDER) {
-      if (!filtered.includes(f)) filtered.push(f);
-    }
-    return filtered;
-  })();
-
-  const handleMoveEducationField = (fieldIdx: number, delta: -1 | 1) => {
-    const newIdx = fieldIdx + delta;
-    if (newIdx < 0 || newIdx >= effectiveEducationFieldOrder.length) return;
-    const newOrder = [...effectiveEducationFieldOrder];
-    const [moved] = newOrder.splice(fieldIdx, 1);
-    newOrder.splice(newIdx, 0, moved);
-    onChange({
-      ...data,
-      educationFieldOrder: newOrder,
-    });
-  };
-
   const handleMoveEducation = (eduIdx: number, delta: -1 | 1) => {
     const newIdx = eduIdx + delta;
     if (newIdx < 0 || newIdx >= data.education.length) return;
@@ -447,31 +340,6 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   // Project handlers
-  const effectiveProjectFieldOrder: ProjectFieldKey[] = (() => {
-    if (!data.projectFieldOrder || !Array.isArray(data.projectFieldOrder)) {
-      return DEFAULT_PROJECT_FIELD_ORDER;
-    }
-    const filtered = data.projectFieldOrder.filter((f) =>
-      DEFAULT_PROJECT_FIELD_ORDER.includes(f as any)
-    ) as ProjectFieldKey[];
-    for (const f of DEFAULT_PROJECT_FIELD_ORDER) {
-      if (!filtered.includes(f)) filtered.push(f);
-    }
-    return filtered;
-  })();
-
-  const handleMoveProjectField = (fieldIdx: number, delta: -1 | 1) => {
-    const newIdx = fieldIdx + delta;
-    if (newIdx < 0 || newIdx >= effectiveProjectFieldOrder.length) return;
-    const newOrder = [...effectiveProjectFieldOrder];
-    const [moved] = newOrder.splice(fieldIdx, 1);
-    newOrder.splice(newIdx, 0, moved);
-    onChange({
-      ...data,
-      projectFieldOrder: newOrder,
-    });
-  };
-
   const handleMoveProject = (projIdx: number, delta: -1 | 1) => {
     const newIdx = projIdx + delta;
     if (newIdx < 0 || newIdx >= data.projects.length) return;
@@ -564,31 +432,6 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   // Skill handlers
-  const effectiveSkillFieldOrder: SkillFieldKey[] = (() => {
-    if (!data.skillFieldOrder || !Array.isArray(data.skillFieldOrder)) {
-      return DEFAULT_SKILL_FIELD_ORDER;
-    }
-    const filtered = data.skillFieldOrder.filter((f) =>
-      DEFAULT_SKILL_FIELD_ORDER.includes(f as any)
-    ) as SkillFieldKey[];
-    for (const f of DEFAULT_SKILL_FIELD_ORDER) {
-      if (!filtered.includes(f)) filtered.push(f);
-    }
-    return filtered;
-  })();
-
-  const handleMoveSkillField = (fieldIdx: number, delta: -1 | 1) => {
-    const newIdx = fieldIdx + delta;
-    if (newIdx < 0 || newIdx >= effectiveSkillFieldOrder.length) return;
-    const newOrder = [...effectiveSkillFieldOrder];
-    const [moved] = newOrder.splice(fieldIdx, 1);
-    newOrder.splice(newIdx, 0, moved);
-    onChange({
-      ...data,
-      skillFieldOrder: newOrder,
-    });
-  };
-
   const handleMoveSkill = (skillIdx: number, delta: -1 | 1) => {
     const newIdx = skillIdx + delta;
     if (newIdx < 0 || newIdx >= data.skills.length) return;
@@ -839,58 +682,61 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             {/* PERSONAL INFO CARD BODY */}
             {sectionKey === "personal" && (
               <>
-                <div className="personal-fields-grid">
-                  {effectivePersonalFieldOrder.map((fieldKey, idx) => (
+                <div className="form-row-2">
+                  <div className="form-group">
+                    <label>Full Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Alex Morgan"
+                      value={data.personal.name || ""}
+                      onChange={(e) => handlePersonalChange("name", e.target.value)}
+                      data-testid="input-personal-name"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Job Title / Headline</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Senior Software Engineer"
+                      value={data.personal.title || ""}
+                      onChange={(e) => handlePersonalChange("title", e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row-3">
+                  {effectiveContactFieldOrder.map((fieldKey, cIdx) => (
                     <div
                       key={fieldKey}
-                      className={`form-group personal-field-item ${
-                        fieldKey === "summary" ? "personal-field-summary" : ""
-                      }`}
+                      className="form-group"
                       data-testid={`personal-field-${fieldKey}`}
                     >
                       <div className="field-header">
-                        <label>{PERSONAL_FIELD_LABELS[fieldKey]}</label>
+                        <label>{CONTACT_FIELD_LABELS[fieldKey]}</label>
                         <div className="field-reorder-actions">
                           <button
                             type="button"
                             className="btn-field-reorder"
-                            disabled={idx === 0}
-                            onClick={() => handleMovePersonalField(idx, -1)}
+                            disabled={cIdx === 0}
+                            onClick={() => handleMoveContactField(cIdx, -1)}
                             data-testid={`btn-move-personal-${fieldKey}-up`}
-                            title={`Move ${PERSONAL_FIELD_LABELS[fieldKey]} up`}
+                            title={`Move ${CONTACT_FIELD_LABELS[fieldKey]} earlier`}
                           >
                             <IconChevronUp size={12} />
                           </button>
                           <button
                             type="button"
                             className="btn-field-reorder"
-                            disabled={idx === effectivePersonalFieldOrder.length - 1}
-                            onClick={() => handleMovePersonalField(idx, 1)}
+                            disabled={cIdx === effectiveContactFieldOrder.length - 1}
+                            onClick={() => handleMoveContactField(cIdx, 1)}
                             data-testid={`btn-move-personal-${fieldKey}-down`}
-                            title={`Move ${PERSONAL_FIELD_LABELS[fieldKey]} down`}
+                            title={`Move ${CONTACT_FIELD_LABELS[fieldKey]} later`}
                           >
                             <IconChevronDown size={12} />
                           </button>
                         </div>
                       </div>
 
-                      {fieldKey === "name" && (
-                        <input
-                          type="text"
-                          placeholder="e.g. Alex Morgan"
-                          value={data.personal.name || ""}
-                          onChange={(e) => handlePersonalChange("name", e.target.value)}
-                          data-testid="input-personal-name"
-                        />
-                      )}
-                      {fieldKey === "title" && (
-                        <input
-                          type="text"
-                          placeholder="e.g. Senior Software Engineer"
-                          value={data.personal.title || ""}
-                          onChange={(e) => handlePersonalChange("title", e.target.value)}
-                        />
-                      )}
                       {fieldKey === "email" && (
                         <input
                           type="email"
@@ -939,16 +785,18 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                           onChange={(e) => handlePersonalChange("github", e.target.value)}
                         />
                       )}
-                      {fieldKey === "summary" && (
-                        <textarea
-                          rows={3}
-                          placeholder="Brief summary of your professional background and core strengths..."
-                          value={data.personal.summary || ""}
-                          onChange={(e) => handlePersonalChange("summary", e.target.value)}
-                        />
-                      )}
                     </div>
                   ))}
+                </div>
+
+                <div className="form-group">
+                  <label>Professional Summary</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Brief summary of your professional background and core strengths..."
+                    value={data.personal.summary || ""}
+                    onChange={(e) => handlePersonalChange("summary", e.target.value)}
+                  />
                 </div>
                 {renderTraversalFooter("personal")}
               </>
@@ -957,9 +805,6 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             {/* EXPERIENCE CARD BODY */}
             {sectionKey === "experience" && (
               <>
-                <div className="field-order-hint">
-                  Field ordering within experience entries is synchronized across all entries.
-                </div>
                 {data.experience.map((exp, expIdx) => (
                   <div
                     key={exp.id}
@@ -1005,165 +850,128 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       </div>
                     </div>
 
-                    <div className="experience-fields-container">
-                      {effectiveExperienceFieldOrder.map((fieldKey, fIdx) => (
-                        <div
-                          key={fieldKey}
-                          className="experience-field-item"
-                          data-testid={`exp-field-${fieldKey}-${expIdx}`}
-                        >
-                          <div className="field-header">
-                            <label>{EXPERIENCE_FIELD_LABELS[fieldKey]}</label>
-                            <div className="field-reorder-actions">
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === 0}
-                                onClick={() => handleMoveExperienceField(fIdx, -1)}
-                                data-testid={`btn-move-experience-${fieldKey}-up`}
-                                title={`Move ${EXPERIENCE_FIELD_LABELS[fieldKey]} up (reflects on all entries)`}
-                              >
-                                <IconChevronUp size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === effectiveExperienceFieldOrder.length - 1}
-                                onClick={() => handleMoveExperienceField(fIdx, 1)}
-                                data-testid={`btn-move-experience-${fieldKey}-down`}
-                                title={`Move ${EXPERIENCE_FIELD_LABELS[fieldKey]} down (reflects on all entries)`}
-                              >
-                                <IconChevronDown size={12} />
-                              </button>
-                            </div>
+                    <div className="form-row-2">
+                      <div className="form-group">
+                        <label>Role / Position</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Senior Software Engineer"
+                          value={exp.role}
+                          onChange={(e) =>
+                            handleUpdateExperience(exp.id, "role", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Company / Organization</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Acme Corp"
+                          value={exp.company}
+                          onChange={(e) =>
+                            handleUpdateExperience(exp.id, "company", e.target.value)
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-row-3">
+                      <div className="form-group">
+                        <label>Location</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. San Francisco, CA"
+                          value={exp.location || ""}
+                          onChange={(e) =>
+                            handleUpdateExperience(exp.id, "location", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Start Date</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Jan 2022"
+                          value={exp.startDate || ""}
+                          onChange={(e) =>
+                            handleUpdateExperience(
+                              exp.id,
+                              "startDate",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>End Date</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Present"
+                          value={exp.endDate || ""}
+                          onChange={(e) =>
+                            handleUpdateExperience(
+                              exp.id,
+                              "endDate",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bullets-section">
+                      {exp.bullets.map((bullet, bIdx) => (
+                        <div key={bIdx} className="bullet-row">
+                          <span className="bullet-dot">•</span>
+                          <input
+                            type="text"
+                            placeholder="Describe key responsibilities or quantifiable results..."
+                            value={bullet}
+                            onChange={(e) =>
+                              handleUpdateExpBullet(exp.id, bIdx, e.target.value)
+                            }
+                          />
+                          <div className="bullet-actions">
+                            <button
+                              type="button"
+                              className="btn-bullet-reorder"
+                              disabled={bIdx === 0}
+                              onClick={() => handleMoveExpBullet(exp.id, bIdx, -1)}
+                              data-testid={`btn-move-exp-bullet-up-${exp.id}-${bIdx}`}
+                              title="Move bullet up"
+                            >
+                              <IconChevronUp size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-bullet-reorder"
+                              disabled={bIdx === exp.bullets.length - 1}
+                              onClick={() => handleMoveExpBullet(exp.id, bIdx, 1)}
+                              data-testid={`btn-move-exp-bullet-down-${exp.id}-${bIdx}`}
+                              title="Move bullet down"
+                            >
+                              <IconChevronDown size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-bullet-remove"
+                              onClick={() => handleRemoveExpBullet(exp.id, bIdx)}
+                              data-testid={`btn-remove-exp-bullet-${exp.id}-${bIdx}`}
+                              title="Remove bullet"
+                            >
+                              <IconX size={13} />
+                            </button>
                           </div>
-
-                          {fieldKey === "role" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Senior Software Engineer"
-                              value={exp.role}
-                              onChange={(e) =>
-                                handleUpdateExperience(exp.id, "role", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "company" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Acme Corp"
-                              value={exp.company}
-                              onChange={(e) =>
-                                handleUpdateExperience(exp.id, "company", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "location" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. San Francisco, CA"
-                              value={exp.location || ""}
-                              onChange={(e) =>
-                                handleUpdateExperience(exp.id, "location", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "dates" && (
-                            <div className="form-row-2">
-                              <div className="form-group">
-                                <label className="sub-label">Start Date</label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. Jan 2022"
-                                  value={exp.startDate || ""}
-                                  onChange={(e) =>
-                                    handleUpdateExperience(
-                                      exp.id,
-                                      "startDate",
-                                      e.target.value
-                                    )
-                                  }
-                                />
-                              </div>
-                              <div className="form-group">
-                                <label className="sub-label">End Date</label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. Present"
-                                  value={exp.endDate || ""}
-                                  onChange={(e) =>
-                                    handleUpdateExperience(
-                                      exp.id,
-                                      "endDate",
-                                      e.target.value
-                                    )
-                                  }
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {fieldKey === "bullets" && (
-                            <div className="bullets-section">
-                              {exp.bullets.map((bullet, bIdx) => (
-                                <div key={bIdx} className="bullet-row">
-                                  <span className="bullet-dot">•</span>
-                                  <input
-                                    type="text"
-                                    placeholder="Describe key responsibilities or quantifiable results..."
-                                    value={bullet}
-                                    onChange={(e) =>
-                                      handleUpdateExpBullet(exp.id, bIdx, e.target.value)
-                                    }
-                                  />
-                                  <div className="bullet-actions">
-                                    <button
-                                      type="button"
-                                      className="btn-bullet-reorder"
-                                      disabled={bIdx === 0}
-                                      onClick={() => handleMoveExpBullet(exp.id, bIdx, -1)}
-                                      data-testid={`btn-move-exp-bullet-up-${exp.id}-${bIdx}`}
-                                      title="Move bullet up"
-                                    >
-                                      <IconChevronUp size={12} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn-bullet-reorder"
-                                      disabled={bIdx === exp.bullets.length - 1}
-                                      onClick={() => handleMoveExpBullet(exp.id, bIdx, 1)}
-                                      data-testid={`btn-move-exp-bullet-down-${exp.id}-${bIdx}`}
-                                      title="Move bullet down"
-                                    >
-                                      <IconChevronDown size={12} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn-bullet-remove"
-                                      onClick={() => handleRemoveExpBullet(exp.id, bIdx)}
-                                      data-testid={`btn-remove-exp-bullet-${exp.id}-${bIdx}`}
-                                      title="Remove bullet"
-                                    >
-                                      <IconX size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                              <button
-                                type="button"
-                                className="btn-add-bullet"
-                                onClick={() => handleAddExpBullet(exp.id)}
-                              >
-                                <IconPlus size={13} />
-                                <span>Add Bullet</span>
-                              </button>
-                            </div>
-                          )}
                         </div>
                       ))}
+                      <button
+                        type="button"
+                        className="btn-add-bullet"
+                        onClick={() => handleAddExpBullet(exp.id)}
+                      >
+                        <IconPlus size={13} />
+                        <span>Add Bullet</span>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1230,115 +1038,85 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       </div>
                     </div>
 
-                    <div className="experience-fields-container">
-                      {effectiveEducationFieldOrder.map((fieldKey, fIdx) => (
-                        <div key={fieldKey} className="experience-field-item">
-                          <div className="field-header">
-                            <label>{EDUCATION_FIELD_LABELS[fieldKey]}</label>
-                            <div className="field-reorder-actions">
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === 0}
-                                onClick={() => handleMoveEducationField(fIdx, -1)}
-                                data-testid={`btn-move-education-${fieldKey}-up`}
-                                title={`Move ${EDUCATION_FIELD_LABELS[fieldKey]} up`}
-                              >
-                                <IconChevronUp size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === effectiveEducationFieldOrder.length - 1}
-                                onClick={() => handleMoveEducationField(fIdx, 1)}
-                                data-testid={`btn-move-education-${fieldKey}-down`}
-                                title={`Move ${EDUCATION_FIELD_LABELS[fieldKey]} down`}
-                              >
-                                <IconChevronDown size={12} />
-                              </button>
-                            </div>
-                          </div>
+                    <div className="form-row-2">
+                      <div className="form-group">
+                        <label>Degree / Certificate</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. B.S. in Computer Science"
+                          value={edu.degree}
+                          onChange={(e) =>
+                            handleUpdateEducation(edu.id, "degree", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Institution / University</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. University of California, Berkeley"
+                          value={edu.institution}
+                          onChange={(e) =>
+                            handleUpdateEducation(edu.id, "institution", e.target.value)
+                          }
+                        />
+                      </div>
+                    </div>
 
-                          {fieldKey === "degree" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. B.S. in Computer Science"
-                              value={edu.degree}
-                              onChange={(e) =>
-                                handleUpdateEducation(edu.id, "degree", e.target.value)
-                              }
-                            />
-                          )}
+                    <div className="form-row-3">
+                      <div className="form-group">
+                        <label>Location</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Berkeley, CA"
+                          value={edu.location || ""}
+                          onChange={(e) =>
+                            handleUpdateEducation(edu.id, "location", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Start Date</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 2017"
+                          value={edu.startDate || ""}
+                          onChange={(e) =>
+                            handleUpdateEducation(
+                              edu.id,
+                              "startDate",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>End Date</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 2021"
+                          value={edu.endDate || ""}
+                          onChange={(e) =>
+                            handleUpdateEducation(
+                              edu.id,
+                              "endDate",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
 
-                          {fieldKey === "institution" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. University of California, Berkeley"
-                              value={edu.institution}
-                              onChange={(e) =>
-                                handleUpdateEducation(edu.id, "institution", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "location" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Berkeley, CA"
-                              value={edu.location || ""}
-                              onChange={(e) =>
-                                handleUpdateEducation(edu.id, "location", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "dates" && (
-                            <div className="form-row-2">
-                              <div className="form-group">
-                                <label className="sub-label">Start Date</label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. 2017"
-                                  value={edu.startDate || ""}
-                                  onChange={(e) =>
-                                    handleUpdateEducation(
-                                      edu.id,
-                                      "startDate",
-                                      e.target.value
-                                    )
-                                  }
-                                />
-                              </div>
-                              <div className="form-group">
-                                <label className="sub-label">End Date</label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. 2021"
-                                  value={edu.endDate || ""}
-                                  onChange={(e) =>
-                                    handleUpdateEducation(
-                                      edu.id,
-                                      "endDate",
-                                      e.target.value
-                                    )
-                                  }
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {fieldKey === "details" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Magna Cum Laude, GPA: 3.9/4.0, Algorithms"
-                              value={edu.details || ""}
-                              onChange={(e) =>
-                                handleUpdateEducation(edu.id, "details", e.target.value)
-                              }
-                            />
-                          )}
-                        </div>
-                      ))}
+                    <div className="form-group">
+                      <label>Honors, GPA or Coursework</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Magna Cum Laude, GPA: 3.9/4.0, Algorithms"
+                        value={edu.details || ""}
+                        onChange={(e) =>
+                          handleUpdateEducation(edu.id, "details", e.target.value)
+                        }
+                      />
                     </div>
                   </div>
                 ))}
@@ -1405,129 +1183,101 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       </div>
                     </div>
 
-                    <div className="experience-fields-container">
-                      {effectiveProjectFieldOrder.map((fieldKey, fIdx) => (
-                        <div key={fieldKey} className="experience-field-item">
-                          <div className="field-header">
-                            <label>{PROJECT_FIELD_LABELS[fieldKey]}</label>
-                            <div className="field-reorder-actions">
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === 0}
-                                onClick={() => handleMoveProjectField(fIdx, -1)}
-                                data-testid={`btn-move-project-${fieldKey}-up`}
-                                title={`Move ${PROJECT_FIELD_LABELS[fieldKey]} up`}
-                              >
-                                <IconChevronUp size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === effectiveProjectFieldOrder.length - 1}
-                                onClick={() => handleMoveProjectField(fIdx, 1)}
-                                data-testid={`btn-move-project-${fieldKey}-down`}
-                                title={`Move ${PROJECT_FIELD_LABELS[fieldKey]} down`}
-                              >
-                                <IconChevronDown size={12} />
-                              </button>
-                            </div>
+                    <div className="form-row-3">
+                      <div className="form-group">
+                        <label>Project Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Distributed Key-Value Store"
+                          value={proj.name}
+                          onChange={(e) =>
+                            handleUpdateProject(proj.id, "name", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Technologies Used</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Rust, Raft, gRPC, Tokio"
+                          value={proj.technologies || ""}
+                          onChange={(e) =>
+                            handleUpdateProject(
+                              proj.id,
+                              "technologies",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Project Link / Demo URL</label>
+                        <input
+                          type="text"
+                          placeholder="https://github.com/alex/project"
+                          value={proj.link || ""}
+                          onChange={(e) =>
+                            handleUpdateProject(proj.id, "link", e.target.value)
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bullets-section">
+                      <label className="bullets-label">Project Highlights</label>
+                      {proj.bullets.map((bullet, bIdx) => (
+                        <div key={bIdx} className="bullet-row">
+                          <span className="bullet-dot">•</span>
+                          <input
+                            type="text"
+                            placeholder="Bullet describing implementation or impact..."
+                            value={bullet}
+                            onChange={(e) =>
+                              handleUpdateProjBullet(proj.id, bIdx, e.target.value)
+                            }
+                          />
+                          <div className="bullet-actions">
+                            <button
+                              type="button"
+                              className="btn-bullet-reorder"
+                              disabled={bIdx === 0}
+                              onClick={() => handleMoveProjBullet(proj.id, bIdx, -1)}
+                              data-testid={`btn-move-proj-bullet-up-${proj.id}-${bIdx}`}
+                              title="Move bullet up"
+                            >
+                              <IconChevronUp size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-bullet-reorder"
+                              disabled={bIdx === proj.bullets.length - 1}
+                              onClick={() => handleMoveProjBullet(proj.id, bIdx, 1)}
+                              data-testid={`btn-move-proj-bullet-down-${proj.id}-${bIdx}`}
+                              title="Move bullet down"
+                            >
+                              <IconChevronDown size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-bullet-remove"
+                              onClick={() => handleRemoveProjBullet(proj.id, bIdx)}
+                              data-testid={`btn-remove-proj-bullet-${proj.id}-${bIdx}`}
+                              title="Remove bullet"
+                            >
+                              <IconX size={13} />
+                            </button>
                           </div>
-
-                          {fieldKey === "name" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Distributed Key-Value Store"
-                              value={proj.name}
-                              onChange={(e) =>
-                                handleUpdateProject(proj.id, "name", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "technologies" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Rust, Raft, gRPC, Tokio"
-                              value={proj.technologies || ""}
-                              onChange={(e) =>
-                                handleUpdateProject(
-                                  proj.id,
-                                  "technologies",
-                                  e.target.value
-                                )
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "link" && (
-                            <input
-                              type="text"
-                              placeholder="https://github.com/alex/project"
-                              value={proj.link || ""}
-                              onChange={(e) =>
-                                handleUpdateProject(proj.id, "link", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "bullets" && (
-                            <div className="bullets-section">
-                              {proj.bullets.map((bullet, bIdx) => (
-                                <div key={bIdx} className="bullet-row">
-                                  <span className="bullet-dot">•</span>
-                                  <input
-                                    type="text"
-                                    placeholder="Bullet describing implementation or impact..."
-                                    value={bullet}
-                                    onChange={(e) =>
-                                      handleUpdateProjBullet(proj.id, bIdx, e.target.value)
-                                    }
-                                  />
-                                  <div className="bullet-actions">
-                                    <button
-                                      type="button"
-                                      className="btn-bullet-reorder"
-                                      disabled={bIdx === 0}
-                                      onClick={() => handleMoveProjBullet(proj.id, bIdx, -1)}
-                                      data-testid={`btn-move-proj-bullet-up-${proj.id}-${bIdx}`}
-                                      title="Move bullet up"
-                                    >
-                                      <IconChevronUp size={12} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn-bullet-reorder"
-                                      disabled={bIdx === proj.bullets.length - 1}
-                                      onClick={() => handleMoveProjBullet(proj.id, bIdx, 1)}
-                                      data-testid={`btn-move-proj-bullet-down-${proj.id}-${bIdx}`}
-                                      title="Move bullet down"
-                                    >
-                                      <IconChevronDown size={12} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn-bullet-remove"
-                                      onClick={() => handleRemoveProjBullet(proj.id, bIdx)}
-                                      title="Remove bullet"
-                                    >
-                                      <IconX size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                              <button
-                                type="button"
-                                className="btn-add-bullet"
-                                onClick={() => handleAddProjBullet(proj.id)}
-                              >
-                                <IconPlus size={13} />
-                                <span>Add Bullet</span>
-                              </button>
-                            </div>
-                          )}
                         </div>
                       ))}
+                      <button
+                        type="button"
+                        className="btn-add-bullet"
+                        onClick={() => handleAddProjBullet(proj.id)}
+                        data-testid={`btn-add-proj-bullet-${proj.id}`}
+                      >
+                        <IconPlus size={13} />
+                        <span>Add Bullet</span>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1594,58 +1344,29 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       </div>
                     </div>
 
-                    <div className="experience-fields-container">
-                      {effectiveSkillFieldOrder.map((fieldKey, fIdx) => (
-                        <div key={fieldKey} className="experience-field-item">
-                          <div className="field-header">
-                            <label>{SKILL_FIELD_LABELS[fieldKey]}</label>
-                            <div className="field-reorder-actions">
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === 0}
-                                onClick={() => handleMoveSkillField(fIdx, -1)}
-                                data-testid={`btn-move-skill-${fieldKey}-up`}
-                                title={`Move ${SKILL_FIELD_LABELS[fieldKey]} up`}
-                              >
-                                <IconChevronUp size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-field-reorder"
-                                disabled={fIdx === effectiveSkillFieldOrder.length - 1}
-                                onClick={() => handleMoveSkillField(fIdx, 1)}
-                                data-testid={`btn-move-skill-${fieldKey}-down`}
-                                title={`Move ${SKILL_FIELD_LABELS[fieldKey]} down`}
-                              >
-                                <IconChevronDown size={12} />
-                              </button>
-                            </div>
-                          </div>
-
-                          {fieldKey === "category" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Languages, Frameworks, Cloud"
-                              value={skill.category}
-                              onChange={(e) =>
-                                handleUpdateSkill(skill.id, "category", e.target.value)
-                              }
-                            />
-                          )}
-
-                          {fieldKey === "skills" && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Rust, TypeScript, Python, Docker"
-                              value={skill.skills}
-                              onChange={(e) =>
-                                handleUpdateSkill(skill.id, "skills", e.target.value)
-                              }
-                            />
-                          )}
-                        </div>
-                      ))}
+                    <div className="form-row-2">
+                      <div className="form-group">
+                        <label>Category</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Languages, Frameworks, Cloud"
+                          value={skill.category}
+                          onChange={(e) =>
+                            handleUpdateSkill(skill.id, "category", e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Skills / Items (comma separated)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Rust, TypeScript, Python, Docker"
+                          value={skill.skills}
+                          onChange={(e) =>
+                            handleUpdateSkill(skill.id, "skills", e.target.value)
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1796,7 +1517,16 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
       {/* Section Navigation Bar */}
       <div className="section-nav-container">
-        <div className="section-tabs-bar" role="tablist" aria-label="Resume Sections">
+        <div
+          className="section-tabs-bar"
+          role="tablist"
+          aria-label="Resume Sections"
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+        >
           <button
             type="button"
             role="tab"
