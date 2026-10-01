@@ -30,7 +30,7 @@ vi.mock("@tauri-apps/api/process", () => ({
 }));
 
 vi.mock("@tauri-apps/api/app", () => ({
-  getVersion: vi.fn().mockResolvedValue("1.1.1"),
+  getVersion: vi.fn().mockResolvedValue("1.1.2"),
 }));
 
 const mockDocs = [
