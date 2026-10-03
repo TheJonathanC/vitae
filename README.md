@@ -37,17 +37,26 @@ Before running Vitae, you need to install:
 - Required for building Tauri applications
 
 ### 3. LaTeX Distribution
-Choose one of the following:
+Choose one of the following for your operating system:
 
-**MiKTeX (Recommended for Windows)**
+**Windows - MiKTeX (Recommended)**
 - Download from [miktex.org](https://miktex.org/download)
 - Smaller installation, auto-downloads packages as needed
 - Make sure to add to PATH during installation
 
-**TeX Live**
-- Download from [tug.org/texlive](https://tug.org/texlive/)
-- Complete LaTeX distribution (~4GB)
-- Cross-platform
+**macOS - BasicTeX or MacTeX**
+- **BasicTeX (Recommended, ~100MB)**: Install via Homebrew:
+  ```bash
+  brew install --cask basictex
+  sudo tlmgr update --self
+  sudo tlmgr install collection-latexextra
+  ```
+- **MacTeX (Complete, ~4GB–5GB)**: Install via Homebrew `brew install --cask mactex-no-gui` or download from [tug.org/mactex](https://www.tug.org/mactex/).
+
+**Linux - TeX Live**
+- **Debian / Ubuntu**: `sudo apt-get install texlive-latex-base texlive-latex-extra`
+- **Fedora**: `sudo dnf install texlive-scheme-medium`
+- **Arch Linux**: `sudo pacman -S texlive-core texlive-latexextra`
 
 ### Verify Installation
 ```bash
@@ -58,7 +67,7 @@ pdflatex --version
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/vitae.git
+git clone https://github.com/TheJonathanC/vitae.git
 cd vitae
 ```
 
@@ -86,7 +95,40 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri build
 ```
 
-The built application will be in `src-tauri/target/release/`.
+The built application will be in `src-tauri/target/release/bundle/`.
+
+## 🍎 Running & Building on macOS
+
+Vitae runs natively on macOS (Apple Silicon M-series and Intel Macs) using the native **WKWebView** engine and Cocoa windowing.
+
+### 1. Install Prerequisites via Homebrew
+```bash
+# Install Node.js, BasicTeX, and Rust
+brew install node
+brew install --cask basictex
+sudo tlmgr update --self
+sudo tlmgr install collection-latexextra
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### 2. Run Vitae Directly
+```bash
+git clone https://github.com/TheJonathanC/vitae.git
+cd vitae
+npm install
+npm run tauri dev
+```
+
+### 3. Build Standalone macOS App & `.dmg`
+```bash
+npm run tauri build
+```
+
+The build produces:
+- **Installer DMG**: `src-tauri/target/release/bundle/dmg/Vitae_1.1.2_*.dmg`
+- **Application Bundle**: `src-tauri/target/release/bundle/macos/Vitae.app`
+
+Drag `Vitae.app` to your `/Applications` folder to use Vitae like any native Mac app. Vitae automatically detects `pdflatex` in standard locations (`/Library/TeX/texbin`, `/opt/homebrew/bin`, `/usr/local/bin`).
 
 ## 🔄 Release Channels & CI/CD Pipeline
 
