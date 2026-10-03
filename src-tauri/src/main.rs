@@ -70,6 +70,47 @@ fn find_pdflatex_binary() -> std::path::PathBuf {
         }
     }
 
+    // 3. On macOS, check standard MacTeX and Homebrew paths (GUI apps don't inherit terminal PATH)
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            std::path::PathBuf::from("/Library/TeX/texbin/pdflatex"),
+            std::path::PathBuf::from("/opt/homebrew/bin/pdflatex"),
+            std::path::PathBuf::from("/usr/local/bin/pdflatex"),
+        ];
+        for candidate in candidates {
+            if candidate.exists() {
+                let mut cmd = create_silent_command(&candidate);
+                cmd.arg("--version");
+                if let Ok(output) = cmd.output() {
+                    if output.status.success() {
+                        return candidate;
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. On Linux, check standard TeX Live paths
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = [
+            std::path::PathBuf::from("/usr/bin/pdflatex"),
+            std::path::PathBuf::from("/usr/local/bin/pdflatex"),
+        ];
+        for candidate in candidates {
+            if candidate.exists() {
+                let mut cmd = create_silent_command(&candidate);
+                cmd.arg("--version");
+                if let Ok(output) = cmd.output() {
+                    if output.status.success() {
+                        return candidate;
+                    }
+                }
+            }
+        }
+    }
+
     std::path::PathBuf::from("pdflatex")
 }
 
