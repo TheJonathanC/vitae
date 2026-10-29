@@ -8,6 +8,7 @@ import { UpdateCheckResponse } from "../types";
 import { checkGithubReleases, RELEASES_PAGE_URL } from "../utils/updates";
 import { useDialog } from "../hooks/useDialog";
 import { IconX } from "./Icons";
+import PackageManager from "./PackageManager";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResponse | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [showPackages, setShowPackages] = useState(false);
   const dialogRef = useDialog<HTMLDivElement>(onClose);
 
   useEffect(() => {
@@ -135,95 +137,106 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
   };
 
   return (
-    <div className="dialog-backdrop" data-testid="settings-modal-overlay" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        className="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="dialog-head">
-          <h2 id="settings-title">Settings</h2>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-            <IconX size={18} />
-          </button>
-        </div>
-
-        <div className="dialog-body">
-          <fieldset className="choice-group">
-            <legend>Release channel</legend>
-            <label className={`choice ${channel === "stable" ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name="update-channel"
-                value="stable"
-                checked={channel === "stable"}
-                onChange={() => handleChannelSelect("stable")}
-              />
-              <span className="choice-text">
-                <span className="choice-title">Stable (recommended)</span>
-                <span className="choice-desc">Tested releases only.</span>
-              </span>
-            </label>
-            <label className={`choice ${channel === "beta" ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name="update-channel"
-                value="beta"
-                checked={channel === "beta"}
-                onChange={() => handleChannelSelect("beta")}
-              />
-              <span className="choice-text">
-                <span className="choice-title">Beta</span>
-                <span className="choice-desc">New builds as soon as they're made. Expect rough edges.</span>
-              </span>
-            </label>
-          </fieldset>
-
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={autoCheck}
-              onChange={(e) => handleAutoCheckToggle(e.target.checked)}
-            />
-            Check for updates when Vitae starts
-          </label>
-
-          <div className="update-check">
-            <button type="button" className="btn" onClick={checkForUpdates} disabled={checking || installing}>
-              {checking ? "Checking…" : "Check for updates"}
+    <>
+      <div className="dialog-backdrop" data-testid="settings-modal-overlay" onClick={onClose}>
+        <div
+          ref={dialogRef}
+          className="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="dialog-head">
+            <h2 id="settings-title">Settings</h2>
+            <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
+              <IconX size={18} />
             </button>
-            {availableUpdate && (
-              <button type="button" className="btn btn-primary" onClick={installUpdate} disabled={installing}>
-                {installing
-                  ? "Installing…"
-                  : availableUpdate.download_url
-                    ? `Download ${availableUpdate.version}`
-                    : `Install ${availableUpdate.version}`}
-              </button>
-            )}
           </div>
-          {statusMessage && (
-            <p className="update-status" role="status">
-              {statusMessage}
+
+          <div className="dialog-body">
+            <fieldset className="choice-group">
+              <legend>Release channel</legend>
+              <label className={`choice ${channel === "stable" ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="update-channel"
+                  value="stable"
+                  checked={channel === "stable"}
+                  onChange={() => handleChannelSelect("stable")}
+                />
+                <span className="choice-text">
+                  <span className="choice-title">Stable (recommended)</span>
+                  <span className="choice-desc">Tested releases only.</span>
+                </span>
+              </label>
+              <label className={`choice ${channel === "beta" ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="update-channel"
+                  value="beta"
+                  checked={channel === "beta"}
+                  onChange={() => handleChannelSelect("beta")}
+                />
+                <span className="choice-text">
+                  <span className="choice-title">Beta</span>
+                  <span className="choice-desc">New builds as soon as they're made. Expect rough edges.</span>
+                </span>
+              </label>
+            </fieldset>
+
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={autoCheck}
+                onChange={(e) => handleAutoCheckToggle(e.target.checked)}
+              />
+              Check for updates when Vitae starts
+            </label>
+
+            <div className="update-check">
+              <button type="button" className="btn" onClick={checkForUpdates} disabled={checking || installing}>
+                {checking ? "Checking…" : "Check for updates"}
+              </button>
+              {availableUpdate && (
+                <button type="button" className="btn btn-primary" onClick={installUpdate} disabled={installing}>
+                  {installing
+                    ? "Installing…"
+                    : availableUpdate.download_url
+                      ? `Download ${availableUpdate.version}`
+                      : `Install ${availableUpdate.version}`}
+                </button>
+              )}
+            </div>
+            {statusMessage && (
+              <p className="update-status" role="status">
+                {statusMessage}
+              </p>
+            )}
+
+            <div className="settings-section">
+              <h3>LaTeX</h3>
+              <p className="muted">See how much space LaTeX packages use and remove the ones you don't need.</p>
+              <button type="button" className="btn" onClick={() => setShowPackages(true)}>
+                Manage LaTeX packages…
+              </button>
+            </div>
+
+            <p className="about-line">
+              Vitae {version}, {channel === "beta" ? "beta" : "stable"} channel
             </p>
-          )}
+          </div>
 
-          <p className="about-line">
-            Vitae {version}, {channel === "beta" ? "beta" : "stable"} channel
-          </p>
-        </div>
-
-        <div className="dialog-foot">
-          <button type="button" onClick={onClose} className="btn btn-primary">
-            Done
-          </button>
+          <div className="dialog-foot">
+            <button type="button" onClick={onClose} className="btn btn-primary">
+              Done
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+      {showPackages && <PackageManager onClose={() => setShowPackages(false)} />}
+    </>
   );
 }
 

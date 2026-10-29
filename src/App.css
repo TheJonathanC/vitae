@@ -1570,3 +1570,146 @@ h3 .tag {
     display: none;
   }
 }
+
+/* LaTeX setup and package manager */
+.command-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.command-row .command-block {
+  flex: 1;
+  min-width: 0;
+  margin: 4px 0 12px;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.setup-error {
+  margin: 12px 0;
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--danger);
+  background-color: var(--danger-soft);
+  border-radius: var(--radius);
+}
+
+.option-list {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.install-progress {
+  margin: 12px 0;
+  padding: 12px 14px;
+  background-color: var(--chrome);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.install-progress p {
+  margin: 8px 0 0;
+}
+
+.progress-bar {
+  height: 6px;
+  overflow: hidden;
+  background-color: var(--chrome-2);
+  border-radius: 3px;
+}
+
+.progress-bar span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background-color: var(--accent);
+  border-radius: 3px;
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar span {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.settings-section {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.settings-section h3 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.package-summary {
+  margin: 0 0 4px;
+}
+
+.package-filter {
+  margin: 12px 0 8px;
+}
+
+.package-list {
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.package-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+}
+
+.package-row + .package-row {
+  border-top: 1px solid var(--rule);
+}
+
+.package-name {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.package-size {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.package-action {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 90px;
+}

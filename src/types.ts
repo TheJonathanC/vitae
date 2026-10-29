@@ -118,3 +118,32 @@ export interface ExtractedTemplateAnalysis {
   detectedSections: string[];
   customVariables: ExtractedTemplateField[];
 }
+
+export interface TexInstallCommand {
+  manager: string;
+  command: string;
+}
+
+export interface TexStatus {
+  installed: boolean;
+  kind: "miktex" | "texlive" | null;
+  platform: "windows" | "macos" | "linux";
+  linux_command: TexInstallCommand | null;
+}
+
+export interface TexInstallProgress {
+  phase: string;
+  message: string;
+}
+
+export interface TexPackage {
+  name: string;
+  size_bytes: number;
+  core: boolean;
+}
+
+export interface TexOverview {
+  kind: "miktex" | "texlive";
+  total_bytes: number;
+  packages: TexPackage[];
+}

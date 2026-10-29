@@ -3,6 +3,7 @@
 
 mod db;
 mod latex;
+mod tex_setup;
 
 use base64::Engine as _;
 use db::{init_database, Document, Template};
@@ -10,6 +11,8 @@ use latex::CompilationResult;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Manager;
 
 pub struct UpdateState(pub std::sync::Mutex<Option<tauri::updater::UpdateResponse<tauri::Wry>>>);
 
@@ -197,6 +200,103 @@ async fn check_latex_installed() -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+static TEX_INSTALL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Serialize)]
+struct TexStatus {
+    installed: bool,
+    kind: Option<String>,
+    platform: String,
+    linux_command: Option<tex_setup::InstallCommand>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TexInstallProgress {
+    phase: String,
+    message: String,
+}
+
+/// Re-detects LaTeX (so a fresh install is picked up without restarting Vitae)
+/// and reports what the setup guide should offer on this OS.
+#[tauri::command]
+async fn get_tex_status() -> Result<TexStatus, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let bin = latex::detect_pdflatex(true);
+        let linux_command = if cfg!(target_os = "linux") {
+            let os_release = fs::read_to_string("/etc/os-release").unwrap_or_default();
+            tex_setup::linux_install_command(&os_release, &tex_setup::on_path)
+        } else {
+            None
+        };
+        TexStatus {
+            installed: bin.is_some(),
+            kind: bin.map(|b| if b.is_miktex { "miktex" } else { "texlive" }.to_string()),
+            platform: match std::env::consts::OS {
+                "windows" => "windows",
+                "macos" => "macos",
+                _ => "linux",
+            }
+            .to_string(),
+            linux_command,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// One-click MiKTeX install for the current Windows user. Progress is sent as
+/// `tex-install-progress` events.
+#[tauri::command]
+async fn install_miktex(app: tauri::AppHandle, package_set: String) -> Result<(), String> {
+    if !cfg!(windows) {
+        return Err("One-click installation is only available on Windows.".into());
+    }
+    if TEX_INSTALL_RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("An installation is already running.".into());
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let local = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .ok_or_else(|| "Couldn't find your user folder.".to_string())?;
+        let work_dir = std::env::temp_dir().join("vitae-miktex-setup");
+        let emit = |phase: &str, message: &str| {
+            let _ = app.emit_all(
+                "tex-install-progress",
+                TexInstallProgress { phase: phase.to_string(), message: message.to_string() },
+            );
+        };
+        tex_setup::install_miktex(&package_set, &work_dir, &tex_setup::miktex_install_dir(&local), &emit)?;
+        latex::detect_pdflatex(true)
+            .map(|_| ())
+            .ok_or_else(|| "MiKTeX was installed but Vitae couldn't find it. Restart Vitae and try again.".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    TEX_INSTALL_RUNNING.store(false, Ordering::SeqCst);
+    result
+}
+
+#[tauri::command]
+async fn get_tex_overview() -> Result<tex_setup::TexOverview, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let bin = latex::detect_pdflatex(false).ok_or_else(|| "LaTeX isn't installed yet.".to_string())?;
+        tex_setup::overview(&bin)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn remove_tex_package(name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let bin = latex::detect_pdflatex(false).ok_or_else(|| "LaTeX isn't installed yet.".to_string())?;
+        tex_setup::remove_package(&bin, &name)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn get_update_endpoint(channel: &str) -> &'static str {
     if channel.eq_ignore_ascii_case("beta") {
         "https://github.com/TheJonathanC/vitae/releases/download/latest-beta/latest-beta.json"
@@ -322,6 +422,10 @@ fn main() {
             export_pdf,
             read_pdf_bytes,
             check_latex_installed,
+            get_tex_status,
+            install_miktex,
+            get_tex_overview,
+            remove_tex_package,
             check_update_custom,
             install_update_custom,
             get_all_templates,

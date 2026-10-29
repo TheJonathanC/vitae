@@ -16,6 +16,21 @@ vi.mock("@tauri-apps/api/shell", () => ({
 }));
 
 describe("SettingsModal component", () => {
+  it("opens the LaTeX package manager without closing settings", async () => {
+    (invoke as any).mockResolvedValue({
+      kind: "texlive",
+      total_bytes: 250_000_000,
+      packages: [{ name: "titlesec", size_bytes: 1000, core: false }],
+    });
+    const onClose = vi.fn();
+    render(<SettingsModal onClose={onClose} currentChannel="stable" onChannelChange={vi.fn()} />);
+    fireEvent.click(screen.getByText("Manage LaTeX packages…"));
+    expect(await screen.findByRole("dialog", { name: "LaTeX packages" })).toBeInTheDocument();
+    expect(await screen.findByText("titlesec")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: /settings/i })).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();

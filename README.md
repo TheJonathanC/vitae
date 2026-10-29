@@ -37,7 +37,9 @@ Before running Vitae, you need to install:
 - Required for building Tauri applications
 
 ### 3. LaTeX Distribution
-Choose one of the following for your operating system:
+Using the installed app? You can skip this: on first launch Vitae's setup guide installs MiKTeX for you on Windows with one click (for your account only, no administrator rights), and gives matching instructions on macOS and Linux. Afterwards, **Settings → Manage LaTeX packages** shows how much space each package uses and lets you remove the ones you don't need. Missing packages are installed automatically when a template needs them.
+
+Installing it yourself instead? Choose one of the following for your operating system:
 
 **Windows - MiKTeX (Recommended)**
 - Download from [miktex.org](https://miktex.org/download)
