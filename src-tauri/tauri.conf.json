@@ -60,6 +60,12 @@
         "certificateThumbprint": null,
         "digestAlgorithm": "sha256",
         "timestampUrl": "",
+        "nsis": {
+          "template": "installer/installer.nsi",
+          "installerIcon": "icons/icon.ico",
+          "headerImage": "icons/installer-header.bmp",
+          "sidebarImage": "icons/installer-sidebar.bmp"
+        },
         "wix": {
           "language": "en-US",
           "bannerPath": "icons/banner.png",
