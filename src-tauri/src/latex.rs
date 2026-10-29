@@ -999,7 +999,7 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         fs::write(
             &script,
             format!(
-                "#!/bin/sh\nfor last; do :; done\n{}\necho 'Package fancyhdr Warning: \\footskip is too small (0.0pt):'\nexit 1\n",
+                "#!/bin/sh\nfor last; do :; done\n{}\necho 'Package fancyhdr Warning: footskip is too small (0.0pt):'\nexit 1\n",
                 write
             ),
         )
