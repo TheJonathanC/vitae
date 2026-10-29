@@ -153,6 +153,7 @@ pub fn sandboxed_command(bin: &LatexBinary, work_dir: &Path, tex_name: &str) -> 
         .arg("-halt-on-error")
         .arg("-file-line-error")
         .arg(if bin.is_miktex { "-disable-write18" } else { "-no-shell-escape" })
+        .args(if bin.is_miktex { &["--enable-installer"][..] } else { &[][..] })
         .arg(tex_name)
         // Honoured by kpathsea (TeX Live / MacTeX); MiKTeX ignores them.
         .env("openin_any", "p")
@@ -210,6 +211,117 @@ pub fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<PassOutpu
         success: status.success(),
         stdout,
     })
+}
+
+/// Most missing packages a single compile may install, so a template that pulls in
+/// a long chain of them still builds but a loop can't run away.
+const MAX_AUTO_INSTALLS: usize = 8;
+const TLMGR_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
+const TLMGR_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
+const TEX_SUPPORT_EXTENSIONS: &[&str] = &["sty", "cls", "clo", "def", "fd", "cfg"];
+
+/// The file named by `LaTeX Error: File `x.sty' not found.` (with or without a
+/// `-file-line-error` prefix). Names that aren't plain TeX support files are
+/// rejected because the result is later handed to `tlmgr`.
+pub fn parse_missing_file(output: &str) -> Option<String> {
+    output
+        .lines()
+        .filter(|line| line.contains("not found"))
+        .filter_map(|line| line.split("File `").nth(1)?.split('\'').next())
+        .find(|name| is_plain_tex_file(name))
+        .map(str::to_string)
+}
+
+fn is_plain_tex_file(name: &str) -> bool {
+    let ext_ok = name
+        .rsplit_once('.')
+        .map_or(false, |(stem, ext)| !stem.is_empty() && TEX_SUPPORT_EXTENSIONS.contains(&ext));
+    ext_ok
+        && name.len() <= 100
+        && !name.starts_with(['-', '.'])
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-'))
+}
+
+fn is_plain_package_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 100
+        && !name.starts_with(['-', '.'])
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-'))
+}
+
+/// The TeX Live package that ships `file`, from `tlmgr search --file --global`
+/// output (`pkg:` at column 0, then tab-indented paths).
+pub fn parse_tlmgr_search(output: &str, file: &str) -> Option<String> {
+    let suffix = format!("/{}", file);
+    let mut package: Option<&str> = None;
+    for line in output.lines() {
+        if line.starts_with(char::is_whitespace) {
+            if line.trim_end().ends_with(&suffix) {
+                if let Some(pkg) = package.filter(|p| is_plain_package_name(p)) {
+                    return Some(pkg.to_string());
+                }
+            }
+        } else if let Some(name) = line.trim_end().strip_suffix(':') {
+            package = Some(name);
+        }
+    }
+    None
+}
+
+fn tlmgr_path(bin: &LatexBinary) -> PathBuf {
+    let name = if cfg!(windows) { "tlmgr.bat" } else { "tlmgr" };
+    match bin.path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join(name),
+        _ => PathBuf::from(name),
+    }
+}
+
+fn run_tlmgr(tlmgr: &Path, args: &[&str], timeout: Duration) -> Result<PassOutput, String> {
+    let mut cmd = create_silent_command(tlmgr);
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    run_with_timeout(cmd, timeout).map_err(|e| match e {
+        RunError::TimedOut => "tlmgr timed out".to_string(),
+        RunError::Spawn(msg) => format!("couldn't run tlmgr ({})", msg),
+    })
+}
+
+/// Installs the TeX Live package that provides `file` and returns its name.
+/// Falls back to a per-user tree when the system one isn't writable.
+fn install_missing_file(bin: &LatexBinary, file: &str) -> Result<String, String> {
+    let tlmgr = tlmgr_path(bin);
+    let found = run_tlmgr(&tlmgr, &["search", "--file", "--global", &format!("/{}", file)], TLMGR_SEARCH_TIMEOUT)?;
+    let package = parse_tlmgr_search(&found.stdout, file).ok_or_else(|| {
+        if found.success {
+            "it isn't in the TeX Live repository".to_string()
+        } else {
+            "tlmgr couldn't reach the TeX Live repository".to_string()
+        }
+    })?;
+    if run_tlmgr(&tlmgr, &["install", &package], TLMGR_INSTALL_TIMEOUT)?.success {
+        return Ok(package);
+    }
+    let _ = run_tlmgr(&tlmgr, &["init-usertree"], TLMGR_SEARCH_TIMEOUT);
+    if run_tlmgr(&tlmgr, &["--usermode", "install", &package], TLMGR_INSTALL_TIMEOUT)?.success {
+        return Ok(package);
+    }
+    Err(format!("installing `{}` failed", package))
+}
+
+/// A readable replacement for TeX's bare "File not found" when auto-install didn't help.
+pub fn missing_package_message(file: &str, bin: &LatexBinary, install_error: Option<&str>) -> String {
+    let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+    if bin.is_miktex {
+        format!(
+            "The LaTeX package file `{}` is missing and MiKTeX couldn't install it automatically. Check your internet connection and compile again; if it keeps failing, install `{}` in MiKTeX Console under Packages.",
+            file, stem
+        )
+    } else {
+        let why = install_error.map(|e| format!(" ({})", e)).unwrap_or_default();
+        format!(
+            "The LaTeX package file `{}` is missing and Vitae couldn't install it automatically{}. Install it with `tlmgr install {}` (or your system's TeX package manager) and compile again.",
+            file, why, stem
+        )
+    }
 }
 
 pub fn check_needs_rerun(output: &str) -> bool {
@@ -301,6 +413,28 @@ pub fn compile(
     // Pass 1 is incremental: existing .aux/.out are kept so most edits need one pass.
     let mut pass = run_pass()?;
 
+    // TeX Live can't fetch packages mid-run (MiKTeX does, via --enable-installer):
+    // install whatever the log says is missing, then compile again.
+    let mut installed: Vec<String> = Vec::new();
+    let mut install_error: Option<String> = None;
+    while !pass.success && !bin.is_miktex && installed.len() < MAX_AUTO_INSTALLS {
+        let Some(file) = parse_missing_file(&pass.stdout) else { break };
+        match install_missing_file(bin, &file) {
+            Ok(package) if !installed.contains(&package) => {
+                installed.push(package);
+                pass = run_pass()?;
+            }
+            Ok(package) => {
+                install_error = Some(format!("`{}` is installed but `{}` is still not found", package, file));
+                break;
+            }
+            Err(why) => {
+                install_error = Some(why);
+                break;
+            }
+        }
+    }
+
     // Stale auxiliary files from an interrupted run can break the next compile.
     // Only then is a clean rebuild worth a second pdflatex run.
     if !pass.success && failed_in_aux_file(&pass.stdout, id) {
@@ -315,7 +449,19 @@ pub fn compile(
         pass = run_pass()?;
     }
 
-    let errors = parse_latex_errors(&pass.stdout);
+    let mut errors = parse_latex_errors(&pass.stdout);
+    if !pass.success {
+        if let Some(file) = parse_missing_file(&pass.stdout) {
+            errors.insert(
+                0,
+                LatexError {
+                    line: None,
+                    message: missing_package_message(&file, bin, install_error.as_deref()),
+                    severity: "error".to_string(),
+                },
+            );
+        }
+    }
     let has_errors = errors.iter().any(|e| e.severity == "error");
 
     if !pdf_file.exists() {
@@ -631,6 +777,51 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
         let cmd = sandboxed_command(&miktex, Path::new("/tmp/work"), "doc.tex");
         assert!(cmd.get_args().any(|a| a == "-disable-write18"));
+        assert!(cmd.get_args().any(|a| a == "--enable-installer"), "MiKTeX should install missing packages itself");
+        let texlive_cmd = sandboxed_command(&texlive, Path::new("/tmp/work"), "doc.tex");
+        assert!(!texlive_cmd.get_args().any(|a| a == "--enable-installer"));
+    }
+
+    #[test]
+    fn test_parse_missing_file() {
+        let plain = "! LaTeX Error: File `sourcesanspro.sty' not found.\n\nType X to quit";
+        assert_eq!(parse_missing_file(plain).as_deref(), Some("sourcesanspro.sty"));
+        let prefixed = "./abc.tex:44: LaTeX Error: File `marvosym.sty' not found.";
+        assert_eq!(parse_missing_file(prefixed).as_deref(), Some("marvosym.sty"));
+        assert_eq!(parse_missing_file("! LaTeX Error: File `foo.cls' not found.").as_deref(), Some("foo.cls"));
+        // Only plain TeX support files are ever passed on to tlmgr.
+        assert_eq!(parse_missing_file("! LaTeX Error: File `../../etc/x.sty' not found."), None);
+        assert_eq!(parse_missing_file("! LaTeX Error: File `-evil.sty' not found."), None);
+        assert_eq!(parse_missing_file("! LaTeX Error: File `photo.png' not found."), None);
+        assert_eq!(parse_missing_file("! Undefined control sequence."), None);
+    }
+
+    #[test]
+    fn test_parse_tlmgr_search() {
+        let out = "tlmgr: package repository https://mirror.example/tlnet (verified)\nsourcesanspro:\n\ttexmf-dist/tex/latex/sourcesanspro/sourcesanspro.sty\nsourcesanspro.doc:\n\ttexmf-dist/doc/fonts/sourcesanspro/sourcesanspro.pdf\n";
+        assert_eq!(parse_tlmgr_search(out, "sourcesanspro.sty").as_deref(), Some("sourcesanspro"));
+        assert_eq!(parse_tlmgr_search(out, "other.sty"), None);
+        assert_eq!(parse_tlmgr_search("", "x.sty"), None);
+        let hostile = "--repository=evil:\n\ttexmf-dist/tex/x.sty\n";
+        assert_eq!(parse_tlmgr_search(hostile, "x.sty"), None);
+    }
+
+    #[test]
+    fn test_tlmgr_path_sits_next_to_pdflatex() {
+        let name = if cfg!(windows) { "tlmgr.bat" } else { "tlmgr" };
+        let bare = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: false };
+        assert_eq!(tlmgr_path(&bare), PathBuf::from(name));
+        let full = LatexBinary { path: PathBuf::from("/usr/local/texlive/bin/pdflatex"), is_miktex: false };
+        assert_eq!(tlmgr_path(&full), PathBuf::from("/usr/local/texlive/bin").join(name));
+    }
+
+    #[test]
+    fn test_missing_package_message_gives_a_next_step() {
+        let texlive = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: false };
+        let msg = missing_package_message("sourcesanspro.sty", &texlive, Some("installing `sourcesanspro` failed"));
+        assert!(msg.contains("tlmgr install sourcesanspro"));
+        let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
+        assert!(missing_package_message("sourcesanspro.sty", &miktex, None).contains("MiKTeX Console"));
     }
 
     #[cfg(unix)]
