@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
 mod db;
 mod latex;
 mod tex_setup;
@@ -358,6 +359,91 @@ fn delete_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
     db::delete_profile(&db_path(&app)?, &id).map_err(db_error)
 }
 
+fn ai_settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("ai_settings.json"))
+}
+
+#[derive(Debug, Serialize)]
+struct AiModels {
+    provider: String,
+    provider_name: String,
+    models: Vec<ai::ModelInfo>,
+}
+
+fn models_view(provider: ai::Provider, models: Vec<ai::ModelInfo>) -> AiModels {
+    AiModels {
+        provider: serde_json::to_value(provider).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default(),
+        provider_name: provider.label().to_string(),
+        models,
+    }
+}
+
+#[tauri::command]
+fn ai_get_settings(app: tauri::AppHandle) -> Result<ai::AiSettingsView, String> {
+    Ok(ai::load_settings(&ai_settings_path(&app)?).view())
+}
+
+/// Checks a key and lists the models it can use. Nothing is saved yet.
+#[tauri::command]
+async fn ai_validate_key(api_key: String) -> Result<AiModels, String> {
+    let key = ai::clean_key(&api_key)?;
+    let provider = ai::detect_provider(&key)
+        .ok_or("Vitae supports Anthropic keys (they start with sk-ant-) and OpenAI keys (sk-).")?;
+    Ok(models_view(provider, ai::fetch_models(provider, &key).await?))
+}
+
+/// Lists models for the saved key, so the model can be changed without re-entering it.
+#[tauri::command]
+async fn ai_list_models(app: tauri::AppHandle) -> Result<AiModels, String> {
+    let settings = ai::load_settings(&ai_settings_path(&app)?);
+    let (Some(provider), Some(key)) = (settings.provider, settings.api_key) else {
+        return Err("No API key is saved.".into());
+    };
+    Ok(models_view(provider, ai::fetch_models(provider, &key).await?))
+}
+
+/// Saves the key (when given) and the chosen model.
+#[tauri::command]
+fn ai_save_settings(app: tauri::AppHandle, api_key: Option<String>, model: String) -> Result<ai::AiSettingsView, String> {
+    let model = model.trim().to_string();
+    if model.is_empty() || model.len() > 100 || !model.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':')) {
+        return Err("Choose a model.".into());
+    }
+    let path = ai_settings_path(&app)?;
+    let mut settings = ai::load_settings(&path);
+    if let Some(key) = api_key {
+        let key = ai::clean_key(&key)?;
+        settings.provider = Some(ai::detect_provider(&key).ok_or("That key isn't from a supported provider.")?);
+        settings.api_key = Some(key);
+    }
+    if settings.api_key.is_none() {
+        return Err("Enter an API key first.".into());
+    }
+    settings.model = Some(model);
+    ai::save_settings(&path, &settings)?;
+    Ok(settings.view())
+}
+
+#[tauri::command]
+fn ai_clear_settings(app: tauri::AppHandle) -> Result<(), String> {
+    ai::clear_settings(&ai_settings_path(&app)?)
+}
+
+/// Rewrites the given bullets for a job. Only called when the user asks for AI help.
+#[tauri::command]
+async fn ai_rewrite(
+    app: tauri::AppHandle,
+    job_text: String,
+    role: Option<String>,
+    items: Vec<ai::RewriteItem>,
+) -> Result<Vec<ai::RewriteItem>, String> {
+    let settings = ai::load_settings(&ai_settings_path(&app)?);
+    let (Some(provider), Some(key), Some(model)) = (settings.provider, settings.api_key, settings.model) else {
+        return Err("Set up an AI key in Settings first.".into());
+    };
+    ai::rewrite(provider, &key, &model, &job_text, role.as_deref(), &items).await
+}
+
 fn get_update_endpoint(channel: &str) -> &'static str {
     if channel.eq_ignore_ascii_case("beta") {
         "https://github.com/TheJonathanC/vitae/releases/download/latest-beta/latest-beta.json"
@@ -493,6 +579,12 @@ fn main() {
             get_template,
             create_template,
             delete_template,
+            ai_get_settings,
+            ai_validate_key,
+            ai_list_models,
+            ai_save_settings,
+            ai_clear_settings,
+            ai_rewrite,
             get_person,
             save_person,
             list_library_items,

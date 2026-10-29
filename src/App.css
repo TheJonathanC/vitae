@@ -1975,3 +1975,44 @@ h3 .tag {
   color: var(--ink-3);
   border-style: dashed;
 }
+
+/* AI assistant */
+.review-list {
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.review-row {
+  padding: 10px 12px;
+}
+
+.review-row + .review-row {
+  border-top: 1px solid var(--rule);
+}
+
+.review-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.review-original {
+  font-size: var(--text-sm);
+  color: var(--ink-3);
+  text-decoration: line-through;
+  overflow-wrap: anywhere;
+}
+
+.review-suggestion {
+  overflow-wrap: anywhere;
+}
+
+.review-flag {
+  font-size: var(--text-sm);
+  color: var(--warning);
+}

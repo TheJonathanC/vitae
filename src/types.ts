@@ -189,3 +189,27 @@ export interface Profile extends ProfileSpec {
   id: string;
   name: string;
 }
+
+export interface AiSettingsView {
+  has_key: boolean;
+  provider: "anthropic" | "openai" | null;
+  provider_name: string | null;
+  model: string | null;
+}
+
+export interface AiModel {
+  id: string;
+  created: number;
+  recommended: boolean;
+}
+
+export interface AiModels {
+  provider: "anthropic" | "openai";
+  provider_name: string;
+  models: AiModel[];
+}
+
+export interface RewriteItem {
+  id: string;
+  text: string;
+}

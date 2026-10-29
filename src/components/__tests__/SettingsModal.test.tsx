@@ -7,6 +7,10 @@ vi.mock("@tauri-apps/api/tauri", () => ({
   invoke: vi.fn(),
 }));
 
+// The AI panel loads its own settings on mount and has its own tests; keep it out of the
+// ordered invoke() responses these tests queue up.
+vi.mock("../AiSettings", () => ({ default: () => null }));
+
 vi.mock("@tauri-apps/api/process", () => ({
   relaunch: vi.fn(),
 }));

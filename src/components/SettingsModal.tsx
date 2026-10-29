@@ -9,6 +9,7 @@ import { checkGithubReleases, RELEASES_PAGE_URL } from "../utils/updates";
 import { useDialog } from "../hooks/useDialog";
 import { IconX } from "./Icons";
 import PackageManager from "./PackageManager";
+import AiSettings from "./AiSettings";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -214,6 +215,8 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
                 {statusMessage}
               </p>
             )}
+
+            <AiSettings />
 
             <div className="settings-section">
               <h3>LaTeX</h3>

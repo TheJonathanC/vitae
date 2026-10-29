@@ -94,6 +94,37 @@ function countMentions(text: string, term: string): number {
   return (text.match(pattern) ?? []).length;
 }
 
+/**
+ * General business words an AI can reasonably use without adding a fact; everything
+ * else in the lexicon (languages, tools, frameworks, certifications) is a concrete claim.
+ */
+const SOFT_TERMS = new Set([
+  "performance", "security", "leadership", "mentoring", "scalability", "monitoring", "campaigns", "pipeline", "roadmap", "prioritization",
+  "retention", "onboarding", "churn", "quota", "negotiation", "budgeting", "forecasting", "audit", "reconciliation", "accessibility",
+  "observability", "agile", "cross-functional", "stakeholder management", "project management", "risk management", "change management",
+  "vendor management", "go-to-market", "data analysis", "dashboards", "statistics", "kpis", "okrs", "saas", "b2b", "system design",
+  "api design", "code review", "responsive design", "data visualization", "product strategy", "content marketing", "email marketing",
+  "social media", "lead generation", "customer success", "prospecting", "incident response", "infrastructure as code",
+]);
+
+const numbersIn = (text: string): string[] => (text.match(/\d[\d,.]*%?/g) ?? []).map((n) => n.replace(/[.,]+$/, ""));
+
+/**
+ * Concrete things a rewrite says that the original didn't: new numbers and named
+ * tools or technologies. Used to flag AI suggestions that may invent experience.
+ */
+export function newFactsIn(original: string, suggestion: string): string[] {
+  const facts: string[] = [];
+  const known = new Set(numbersIn(original));
+  for (const n of numbersIn(suggestion)) {
+    if (!known.has(n) && !facts.includes(n)) facts.push(n);
+  }
+  for (const term of LEXICON) {
+    if (!SOFT_TERMS.has(term) && mentions(suggestion, term) && !mentions(original, term)) facts.push(term);
+  }
+  return facts;
+}
+
 const MAX_JOB_CHARS = 20000;
 const REQUIREMENTS = /requirements|qualifications|what you(?:'|’)?ll need|must have|you have|who you are|what we(?:'|’)re looking for/i;
 

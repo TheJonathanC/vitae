@@ -157,6 +157,136 @@ describe("NewDocumentDialog", () => {
     });
   });
 
+  describe("improving wording with AI", () => {
+    const aiRow = {
+      id: "e1",
+      kind: "experience",
+      data: JSON.stringify({ role: "Engineer", company: "Acme", startDate: "2022", endDate: "Present", bullets: ["Built Python APIs on AWS", "Ran Kubernetes clusters"] }),
+      created_at: "",
+      updated_at: "",
+    };
+    const settings = { has_key: true, provider: "anthropic", provider_name: "Anthropic", model: "claude-sonnet-5-5" };
+    const JOB = "We need Python, AWS and Kubernetes experience.";
+
+    function setup(opts: { settings?: object | null; rewrite?: () => unknown } = {}) {
+      (invoke as any).mockImplementation(async (cmd: string) => {
+        if (cmd === "get_person") return JSON.stringify({ name: "Jane Doe" });
+        if (cmd === "list_library_items") return [aiRow];
+        if (cmd === "list_profiles") return [];
+        if (cmd === "ai_get_settings") return opts.settings === undefined ? settings : opts.settings;
+        if (cmd === "ai_rewrite") return (opts.rewrite ?? (() => []))();
+        throw new Error(cmd);
+      });
+      return renderDialog();
+    }
+
+    async function fill() {
+      await waitFor(() => expect(screen.getByLabelText("Start from")).toHaveValue("everything"));
+      fireEvent.change(screen.getByLabelText("Name"), { target: { value: "With AI" } });
+      fireEvent.change(screen.getByLabelText("Job description"), { target: { value: JOB } });
+    }
+
+    it("only offers AI once a key is saved, otherwise points to Settings", async () => {
+      setup({ settings: { has_key: false, provider: null, provider_name: null, model: null } });
+      await fill();
+      expect(screen.queryByLabelText(/Improve the wording with AI/)).not.toBeInTheDocument();
+      expect(screen.getByText(/Add an API key in Settings/)).toBeInTheDocument();
+    });
+
+    it("sends the chosen bullets and job, then lets the user pick which changes to keep", async () => {
+      const { onCreate } = setup({
+        rewrite: () => [
+          { id: "exp-0-0", text: "Designed and shipped Python APIs on AWS" },
+          { id: "exp-0-1", text: "Operated Kubernetes clusters" },
+        ],
+      });
+      await fill();
+      fireEvent.click(await screen.findByLabelText(/Improve the wording with AI \(claude-sonnet-5-5\)/));
+      expect(screen.getByText(/Sends the bullets on this resume and the job description to Anthropic/)).toBeInTheDocument();
+      fireEvent.click(screen.getByText("Create resume"));
+
+      expect(await screen.findByRole("list", { name: "Suggested changes" })).toBeInTheDocument();
+      expect(onCreate).not.toHaveBeenCalled();
+      expect(invoke).toHaveBeenCalledWith("ai_rewrite", {
+        jobText: JOB,
+        role: null,
+        items: [
+          { id: "exp-0-0", text: "Built Python APIs on AWS" },
+          { id: "exp-0-1", text: "Ran Kubernetes clusters" },
+        ],
+      });
+
+      fireEvent.click(screen.getByLabelText("Use suggestion: Operated Kubernetes clusters"));
+      fireEvent.click(screen.getByText("Use selected changes"));
+      const bullets = onCreate.mock.calls[0][0].resumeData.experience[0].bullets;
+      expect(bullets).toEqual(["Designed and shipped Python APIs on AWS", "Ran Kubernetes clusters"]);
+    });
+
+    it("leaves suggestions that add a new number or tool unticked and says why", async () => {
+      setup({ rewrite: () => [{ id: "exp-0-0", text: "Cut Python API latency by 40% on AWS" }] });
+      await fill();
+      fireEvent.click(await screen.findByLabelText(/Improve the wording with AI/));
+      fireEvent.click(screen.getByText("Create resume"));
+      const box = await screen.findByLabelText("Use suggestion: Cut Python API latency by 40% on AWS");
+      expect(box).not.toBeChecked();
+      expect(screen.getByText(/Adds something not in your original: 40%/)).toBeInTheDocument();
+      expect(screen.getByText("Use selected changes")).toBeDisabled();
+    });
+
+    it("can create the resume without any AI changes", async () => {
+      const { onCreate } = setup({ rewrite: () => [{ id: "exp-0-0", text: "Designed Python APIs on AWS" }] });
+      await fill();
+      fireEvent.click(await screen.findByLabelText(/Improve the wording with AI/));
+      fireEvent.click(screen.getByText("Create resume"));
+      fireEvent.click(await screen.findByText("Create without AI changes"));
+      expect(onCreate.mock.calls[0][0].resumeData.experience[0].bullets[0]).toBe("Built Python APIs on AWS");
+    });
+
+    it("explains an AI failure and still lets the user create the resume", async () => {
+      const { onCreate } = setup({
+        rewrite: () => {
+          throw "Anthropic rejected the API key. Check that it's correct and active.";
+        },
+      });
+      await fill();
+      fireEvent.click(await screen.findByLabelText(/Improve the wording with AI/));
+      fireEvent.click(screen.getByText("Create resume"));
+      expect(await screen.findByRole("alert")).toHaveTextContent("rejected the API key");
+      fireEvent.click(screen.getByText("Create without AI changes"));
+      expect(onCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it("handles an AI answer with nothing to change", async () => {
+      const { onCreate } = setup({ rewrite: () => [{ id: "exp-0-0", text: "Built Python APIs on AWS" }] });
+      await fill();
+      fireEvent.click(await screen.findByLabelText(/Improve the wording with AI/));
+      fireEvent.click(screen.getByText("Create resume"));
+      expect(await screen.findByText(/didn't suggest any changes/)).toBeInTheDocument();
+      expect(screen.getByText("Use selected changes")).toBeDisabled();
+      fireEvent.click(screen.getByText("Create without AI changes"));
+      expect(onCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it("goes back to the form from the review", async () => {
+      setup({ rewrite: () => [{ id: "exp-0-0", text: "Designed Python APIs on AWS" }] });
+      await fill();
+      fireEvent.click(await screen.findByLabelText(/Improve the wording with AI/));
+      fireEvent.click(screen.getByText("Create resume"));
+      await screen.findByRole("list", { name: "Suggested changes" });
+      fireEvent.click(screen.getByText("Back"));
+      expect(screen.getByLabelText("Job description")).toHaveValue(JOB);
+    });
+
+    it("skips the AI when it isn't ticked", async () => {
+      const { onCreate } = setup();
+      await fill();
+      await screen.findByLabelText(/Improve the wording with AI/);
+      fireEvent.click(screen.getByText("Create resume"));
+      expect(onCreate).toHaveBeenCalledTimes(1);
+      expect(invoke).not.toHaveBeenCalledWith("ai_rewrite", expect.anything());
+    });
+  });
+
   it("needs a name", async () => {
     backend(null);
     renderDialog();
