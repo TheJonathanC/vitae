@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import UpdateChecker from "../UpdateChecker";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import UpdateChecker, { UPDATE_CHECK_INTERVAL_MS } from "../UpdateChecker";
 import { invoke } from "@tauri-apps/api/tauri";
 
 vi.mock("@tauri-apps/api/tauri", () => ({
@@ -102,6 +102,31 @@ describe("UpdateChecker component", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("update-banner")).not.toBeInTheDocument();
     });
+  });
+
+  it("re-checks periodically so a long-running session picks up new releases", async () => {
+    vi.useFakeTimers();
+    try {
+      (invoke as any)
+        .mockResolvedValueOnce({ should_update: false })
+        .mockResolvedValueOnce({ should_update: true, version: "1.1.3-beta.41" });
+
+      const { unmount } = render(<UpdateChecker channel="beta" />);
+      await act(async () => {});
+      expect(screen.queryByTestId("update-banner")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+      });
+      expect(invoke).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(/Version 1.1.3-beta.41 is ready to install/i)).toBeInTheDocument();
+
+      unmount();
+      await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+      expect(invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not check for updates when auto-update is disabled", async () => {

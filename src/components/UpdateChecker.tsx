@@ -7,6 +7,8 @@ import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
 import { checkGithubReleases, getStoredChannel, RELEASES_PAGE_URL } from "../utils/updates";
 
+export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 interface UpdateCheckerProps {
   channel?: string;
 }
@@ -26,8 +28,8 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
     setUpdateAvailable(false);
     setUpdateInfo(null);
 
-    const autoCheck = localStorage.getItem("vitae_auto_update") !== "false";
-    if (autoCheck) {
+    const runCheck = () => {
+      if (localStorage.getItem("vitae_auto_update") === "false") return;
       invoke<UpdateCheckResponse>("check_update_custom", {
         channel,
       })
@@ -63,10 +65,15 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
             setUpdateInfo(null);
           }
         });
-    }
+    };
+
+    runCheck();
+    // Re-check periodically so long-running sessions still hear about new releases.
+    const interval = window.setInterval(runCheck, UPDATE_CHECK_INTERVAL_MS);
 
     return () => {
       isCancelled = true;
+      window.clearInterval(interval);
     };
   }, [propChannel]);
 
