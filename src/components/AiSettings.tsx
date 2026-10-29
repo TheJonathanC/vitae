@@ -68,7 +68,7 @@ function AiSettings() {
     });
 
   return (
-    <div className="settings-section ai-settings">
+    <div className="settings-section">
       <h3>AI assistant (optional)</h3>
       <p className="muted">
         Add your own Anthropic or OpenAI API key and Vitae can suggest better wording for your bullets. You review every change before it's used, and nothing is sent unless you ask.

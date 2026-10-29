@@ -228,7 +228,7 @@ function NewDocumentDialog({ templates, onCreate, onCancel, onOpenDetails }: New
                     </div>
                     {plan && (
                       <div className="target-result" role="region" aria-label="Match preview">
-                        <p className="target-score">
+                        <p>
                           <strong>{plan.coverage}%</strong> of the job's key terms are on this resume.
                         </p>
                         <p className="muted">
