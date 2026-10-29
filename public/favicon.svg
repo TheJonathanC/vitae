@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Vitae mark: the cutting mat's 4x4 grid with two lit cells (see src-tauri/installer/render-art.py) -->
+  <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
+  <g clip-path="url(#tile)">
+    <rect width="64" height="64" fill="#1e3d33"/>
+    <path d="M16 0V64M32 0V64M48 0V64M0 16H64M0 32H64M0 48H64" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1"/>
+    <rect x="32" y="16" width="16" height="16" fill="#78c2a4"/>
+    <rect x="16" y="32" width="16" height="16" fill="#e6efea"/>
+  </g>
+</svg>

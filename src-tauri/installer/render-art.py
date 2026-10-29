@@ -1,12 +1,15 @@
-"""Renders the installer artwork into src-tauri/icons/.
+"""Renders the app icon master and the installer artwork into src-tauri/icons/.
 
+  app-icon.png           1024px master for `npx tauri icon` (all platform icons)
   installer-sidebar.bmp  NSIS welcome/finish sidebar   (164x314)
   installer-header.bmp   NSIS inner-page header image  (150x57)
   banner.png             WiX (MSI) dialog banner       (493x58)
   dialog.png             WiX (MSI) welcome background  (493x312)
 
 Usage: python3 src-tauri/installer/render-art.py   (requires Pillow)
-Colors must stay in sync with the VITAE_* defines in installer.nsi.
+       npx tauri icon src-tauri/icons/app-icon.png
+Colors come from the app's dark theme (src/styles.css) and must stay in sync
+with the VITAE_* defines in installer.nsi and with public/favicon.svg.
 """
 from pathlib import Path
 
@@ -15,13 +18,17 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 SS = 4  # supersampling factor
 
-BG = (24, 24, 27)  # zinc-900, matches VITAE_BG
-TEXT = (244, 244, 245)
-MUTED = (161, 161, 170)
-FAINT = (63, 63, 70)
-RULE = (39, 39, 42)
-ACCENT = (14, 99, 156)
-LIGHT = (250, 250, 250)
+BG = (20, 25, 28)  # --chrome (dark), matches VITAE_BG
+TEXT = (228, 233, 230)  # --ink (dark)
+MUTED = (141, 152, 147)  # --ink-3 (dark)
+FAINT = (61, 72, 78)  # --rule-strong (dark)
+RULE = (43, 52, 57)  # --rule (dark)
+ACCENT = (120, 194, 164)  # --accent (dark), the mint cell
+MAT = (30, 61, 51)  # --mat (dark), the icon tile
+MAT_INK = (230, 239, 234)  # --mat-ink, the paper cell
+LIGHT = (243, 245, 244)  # --chrome (light)
+LIGHT_RULE = (221, 226, 223)  # --rule (light)
+INK = (29, 39, 49)  # --ink (light)
 
 FONT_DIRS = [
     Path("/usr/share/texmf/fonts/opentype/public/lm"),
@@ -52,22 +59,33 @@ def glow(img, cx, cy, radius, color, alpha):
     img.paste(layer, (0, 0), layer)
 
 
-def mark(img, x, y, size):
-    """App mark: rounded square with a sky-to-blue gradient and a serif V."""
-    s = size * SS
-    grad = Image.new("RGB", (s, s))
-    top, bottom = (56, 189, 248), (14, 99, 156)
-    gd = ImageDraw.Draw(grad)
-    for i in range(s * 2):
-        t = i / (s * 2 - 1)
-        c = tuple(round(a + (b - a) * t) for a, b in zip(top, bottom))
-        gd.line([(i, 0), (0, i)], fill=c)
+def mark_image(px):
+    """The app mark at px x px (RGBA): the cutting mat's 4x4 grid with two lit cells."""
+    s = px * SS
+    u = s / 64  # one unit of the 64-unit design grid
+    tile = Image.new("RGB", (s, s), MAT)
+    d = ImageDraw.Draw(tile, "RGBA")  # RGB base + RGBA draw blends the translucent grid
+    for i in (16, 32, 48):
+        d.rectangle((i * u - u / 2, 0, i * u + u / 2, s), fill=(255, 255, 255, 31))
+        d.rectangle((0, i * u - u / 2, s, i * u + u / 2), fill=(255, 255, 255, 31))
+    d.rectangle((32 * u, 16 * u, 48 * u, 32 * u), fill=ACCENT)
+    d.rectangle((16 * u, 32 * u, 32 * u, 48 * u), fill=MAT_INK)
     mask = Image.new("L", (s, s), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, s - 1, s - 1), radius=s * 0.24, fill=255)
-    img.paste(grad, (x * SS, y * SS), mask)
-    d = ImageDraw.Draw(img)
-    f = font("lmroman10-bold.otf", round(size * 0.72))
-    d.text(((x + size / 2) * SS, (y + size * 0.53) * SS), "V", font=f, fill=(255, 255, 255), anchor="mm")
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, s - 1, s - 1), radius=14 * u, fill=255)
+    tile = tile.convert("RGBA")
+    tile.putalpha(mask)
+    return tile
+
+
+def mark(img, x, y, size):
+    tile = mark_image(size)
+    img.paste(tile, (round(x * SS), round(y * SS)), tile)
+
+
+def app_icon():
+    tile = mark_image(1024)
+    tile.resize((1024, 1024), Image.LANCZOS).save(ICONS / "app-icon.png")
+    print("app-icon.png: 1024x1024")
 
 
 def save(img, name):
@@ -80,8 +98,8 @@ def save(img, name):
 
 def brand_panel(img, width, height):
     """Dark branded panel shared by the NSIS sidebar and the WiX dialog."""
-    glow(img, 30, 50, 70, (56, 189, 248), 60)
-    glow(img, width, height, 90, ACCENT, 90)
+    glow(img, 30, 50, 70, ACCENT, 40)
+    glow(img, width, height, 90, MAT, 160)
     d = ImageDraw.Draw(img)
     mark(img, 16, 28, 44)
     d.text((16 * SS, 84 * SS), "Vitae", font=font("lmroman10-regular.otf", 34), fill=TEXT, anchor="lt")
@@ -112,7 +130,7 @@ def sidebar():
         d.text((x, y * SS), rest, font=mono, fill=FAINT, anchor="lt")
         y += 15
     d.line((16 * SS, (h - 26) * SS, (w - 16) * SS, (h - 26) * SS), fill=RULE, width=SS)
-    d.text((16 * SS, (h - 17) * SS), "offline  ·  native  ·  fast", font=font("lmroman10-regular.otf", 9), fill=(82, 82, 91), anchor="lm")
+    d.text((16 * SS, (h - 17) * SS), "offline  ·  native  ·  fast", font=font("lmroman10-regular.otf", 9), fill=MUTED, anchor="lm")
     save(img, "installer-sidebar.bmp")
 
 
@@ -132,8 +150,8 @@ def header():
 
 def banner():
     # WiX draws black title text on the left of the banner, so it stays light.
-    img = wordmark_right(493, 58, LIGHT, BG, 32)
-    ImageDraw.Draw(img).line((0, img.height - SS, img.width, img.height - SS), fill=(228, 228, 231), width=SS)
+    img = wordmark_right(493, 58, LIGHT, INK, 32)
+    ImageDraw.Draw(img).line((0, img.height - SS, img.width, img.height - SS), fill=LIGHT_RULE, width=SS)
     save(img, "banner.png")
 
 
@@ -148,6 +166,7 @@ def dialog():
 
 
 if __name__ == "__main__":
+    app_icon()
     sidebar()
     header()
     banner()

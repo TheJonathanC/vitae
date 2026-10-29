@@ -59,19 +59,19 @@ OutFile "${OUTFILE}"
 SetFont "Segoe UI" 9
 
 ; RRGGBB colors for SetCtlColors (keep in sync with render-art.py)
-!define VITAE_BG "18181B"
-!define VITAE_FIELD "27272A"
-!define VITAE_TEXT "F4F4F5"
-!define VITAE_MUTED "71717A"
+!define VITAE_BG "14191C"
+!define VITAE_FIELD "232B2F"
+!define VITAE_TEXT "E4E9E6"
+!define VITAE_MUTED "8D9893"
 ; 0xBBGGRR COLORREFs for raw window messages
-!define VITAE_ACCENT_BGR 0xC78402
-!define VITAE_FIELD_BGR 0x2A2727
+!define VITAE_ACCENT_BGR 0xA4C278
+!define VITAE_FIELD_BGR 0x2F2B23
 
 !define MUI_BGCOLOR "${VITAE_BG}"
 !define MUI_TEXTCOLOR "${VITAE_TEXT}"
 !define MUI_HEADER_TRANSPARENT_TEXT
 !define MUI_HEADERIMAGE_RIGHT
-!define MUI_INSTFILESPAGE_COLORS "D4D4D8 ${VITAE_BG}"
+!define MUI_INSTFILESPAGE_COLORS "AEB8B3 ${VITAE_BG}"
 !define MUI_ABORTWARNING
 !define MUI_UNABORTWARNING
 !define MUI_CUSTOMFUNCTION_GUIINIT VitaeGuiInit
@@ -84,7 +84,7 @@ SetFont "Segoe UI" 9
 !define MUI_FINISHPAGE_RUN_TEXT "Launch ${PRODUCTNAME}"
 !define MUI_FINISHPAGE_LINK "View ${PRODUCTNAME} on GitHub"
 !define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/TheJonathanC/vitae"
-!define MUI_FINISHPAGE_LINK_COLOR "38BDF8"
+!define MUI_FINISHPAGE_LINK_COLOR "78C2A4"
 
 !define /ifndef PBM_SETBARCOLOR 0x0409
 !define /ifndef PBM_SETBKCOLOR 0x2001
