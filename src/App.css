@@ -1905,3 +1905,73 @@ h3 .tag {
   color: var(--ink-2);
   overflow-wrap: anywhere;
 }
+
+/* Tailor to a job */
+.target-section {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.target-section > summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.target-section[open] > summary {
+  margin-bottom: 8px;
+}
+
+.target-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background-color: var(--chrome);
+  border-radius: var(--radius);
+}
+
+.target-result p {
+  margin: 0;
+}
+
+.keyword-group h3 {
+  margin: 0 0 4px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.keyword-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keyword-chips li {
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+}
+
+.keyword-used li {
+  color: var(--accent);
+  background-color: var(--accent-soft);
+  border-color: transparent;
+}
+
+.keyword-available li {
+  color: var(--ink-2);
+  background-color: var(--chrome-2);
+  border-color: transparent;
+}
+
+.keyword-missing li {
+  color: var(--ink-3);
+  border-style: dashed;
+}

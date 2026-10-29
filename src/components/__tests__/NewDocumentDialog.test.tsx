@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import NewDocumentDialog from "../NewDocumentDialog";
 import { invoke } from "@tauri-apps/api/tauri";
 import { Template } from "../../types";
@@ -79,6 +79,82 @@ describe("NewDocumentDialog", () => {
     expect(options.templateId).toBe("t2");
     expect(options.resumeData.personal).toMatchObject({ title: "Backend Engineer", summary: "Servers." });
     expect(options.resumeData.experience).toEqual([]);
+  });
+
+  describe("tailoring to a job", () => {
+    const rows = [
+      {
+        id: "e1",
+        kind: "experience",
+        data: JSON.stringify({
+          role: "Engineer",
+          company: "Acme",
+          startDate: "2022",
+          endDate: "Present",
+          bullets: ["Built Python APIs on AWS", "Ran Kubernetes clusters", "Organised the office party"],
+        }),
+        created_at: "",
+        updated_at: "",
+      },
+    ];
+    const JOB = "We need Python, AWS and Kubernetes experience. Terraform is a plus. You will own payments. Payments reliability matters.";
+
+    async function open() {
+      backend({ name: "Jane Doe" }, rows);
+      const handlers = renderDialog();
+      await waitFor(() => expect(screen.getByLabelText("Start from")).toHaveValue("everything"));
+      fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Targeted" } });
+      return handlers;
+    }
+
+    it("previews the match and which terms are used or missing", async () => {
+      await open();
+      fireEvent.change(screen.getByLabelText("Job description"), { target: { value: JOB } });
+      const preview = await screen.findByRole("region", { name: "Match preview" });
+      expect(preview).toHaveTextContent(/\d+% of the job's key terms/);
+      expect(within(preview).getByRole("list", { name: "On your resume" })).toHaveTextContent("python");
+      expect(within(preview).getByRole("list", { name: "Not in your details" })).toHaveTextContent("terraform");
+      expect(preview).toHaveTextContent("Using 1 of 1 role");
+    });
+
+    it("creates a resume with only the bullets that fit, plus the role's headline", async () => {
+      const { onCreate } = await open();
+      fireEvent.change(screen.getByLabelText("Role"), { target: { value: "backend" } });
+      fireEvent.change(screen.getByLabelText("Job description"), { target: { value: JOB } });
+      await screen.findByRole("region", { name: "Match preview" });
+      fireEvent.click(screen.getByText("Create resume"));
+      const data = onCreate.mock.calls[0][0].resumeData;
+      expect(data.experience[0].bullets).toEqual(["Built Python APIs on AWS", "Ran Kubernetes clusters"]);
+      expect(data.personal.title).toBe("Backend Engineer");
+    });
+
+    it("lets the user override the headline", async () => {
+      const { onCreate } = await open();
+      fireEvent.change(screen.getByLabelText("Role"), { target: { value: "backend" } });
+      fireEvent.change(screen.getByLabelText("Headline on the resume"), { target: { value: "Payments Engineer" } });
+      fireEvent.click(screen.getByText("Create resume"));
+      expect(onCreate.mock.calls[0][0].resumeData.personal.title).toBe("Payments Engineer");
+    });
+
+    it("works from a role alone", async () => {
+      await open();
+      fireEvent.change(screen.getByLabelText("Role"), { target: { value: "devops" } });
+      expect(await screen.findByRole("region", { name: "Match preview" })).toBeInTheDocument();
+    });
+
+    it("changes nothing when no role or job is given", async () => {
+      const { onCreate } = await open();
+      expect(screen.queryByRole("region", { name: "Match preview" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText("Create resume"));
+      expect(onCreate.mock.calls[0][0].resumeData.experience[0].bullets).toHaveLength(3);
+    });
+
+    it("is unavailable for a blank resume", async () => {
+      await open();
+      fireEvent.change(screen.getByLabelText("Start from"), { target: { value: "blank" } });
+      expect(screen.queryByLabelText("Job description")).not.toBeInTheDocument();
+      expect(screen.getByText(/Choose a profile or "Everything I've saved"/)).toBeInTheDocument();
+    });
   });
 
   it("needs a name", async () => {
