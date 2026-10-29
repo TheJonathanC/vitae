@@ -193,7 +193,8 @@ jobs:
             Write-Host "Release $env:TAG already exists (re-run); replacing its assets"
             gh release upload $env:TAG @files --clobber
           } else {
-            $flags = if ($env:CHANNEL -eq "stable") { @("--latest") } else { @("--prerelease", "--latest=false") }
+            # @(...) keeps a one-flag result an array; a bare string would splat per character
+            $flags = @(if ($env:CHANNEL -eq "stable") { "--latest" } else { "--prerelease", "--latest=false" })
             gh release create $env:TAG @files --target $env:GITHUB_SHA --title "Vitae $env:TAG" --generate-notes @flags
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
