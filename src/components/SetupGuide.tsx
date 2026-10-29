@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/api/shell";
 import { IconCheck } from "./Icons";
+import { useDialog } from "../hooks/useDialog";
 
 interface SetupGuideProps {
   onClose: () => void;
@@ -8,6 +9,7 @@ interface SetupGuideProps {
 
 function SetupGuide({ onClose }: SetupGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
 
   const userAgent = navigator.userAgent.toLowerCase();
   const isWindows = userAgent.includes("win");
@@ -193,9 +195,16 @@ function SetupGuide({ onClose }: SetupGuideProps) {
 
   return (
     <div className="setup-overlay">
-      <div className="setup-modal">
+      <div
+        ref={dialogRef}
+        className="setup-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="setup-guide-title"
+        tabIndex={-1}
+      >
         <div className="setup-header">
-          <h2>{steps[currentStep].title}</h2>
+          <h2 id="setup-guide-title">{steps[currentStep].title}</h2>
           <div className="setup-progress">
             Step {currentStep + 1} of {steps.length}
           </div>

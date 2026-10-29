@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { Template, ResumeData } from "../types";
+import { Template, ResumePersonalInfo } from "../types";
+import { useDialog } from "../hooks/useDialog";
 import { convertRawLatexToTemplate, extractFieldsFromTemplate } from "../utils/templateEngine";
 import {
   IconLayers,
@@ -16,11 +17,23 @@ import {
 interface TemplateManagerProps {
   templates: Template[];
   currentTemplateId: string | null;
-  onSelectTemplate: (template: Template) => void;
+  /**
+   * Applies a template. For a just-imported template, `importedPersonal` holds
+   * contact details detected in the file (applied in the same update, so the
+   * template switch and the data merge can't race each other).
+   */
+  onSelectTemplate: (template: Template, importedPersonal?: Partial<ResumePersonalInfo>) => void;
   onTemplatesUpdated: () => void;
   onClose: () => void;
-  onImportDataIntoResume?: (extractedData: Partial<ResumeData>) => void;
 }
+
+const SECTION_LABELS: Record<string, string> = {
+  experience: "Experience",
+  education: "Education",
+  projects: "Projects",
+  skills: "Skills",
+  customSections: "Custom sections",
+};
 
 export const TemplateManager: React.FC<TemplateManagerProps> = ({
   templates,
@@ -28,7 +41,6 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
   onSelectTemplate,
   onTemplatesUpdated,
   onClose,
-  onImportDataIntoResume,
 }) => {
   const [activeTab, setActiveTab] = useState<"gallery" | "import">("gallery");
   const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null);
@@ -37,26 +49,21 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [importName, setImportName] = useState("");
   const [importDesc, setImportDesc] = useState("");
   const [importContent, setImportContent] = useState("");
-  const [importExtractedData, setImportExtractedData] = useState<Partial<ResumeData> | null>(null);
+  const [importExtractedData, setImportExtractedData] = useState<Partial<ResumePersonalInfo> | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (viewingTemplate) {
-          setViewingTemplate(null);
-        } else {
-          onClose();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [viewingTemplate, onClose]);
+  // Escape closes the code viewer first, then the manager.
+  const dialogRef = useDialog<HTMLDivElement>(() => {
+    if (viewingTemplate) {
+      setViewingTemplate(null);
+    } else {
+      onClose();
+    }
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -79,7 +86,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
       // Convert or analyze raw LaTeX
       const { templateContent, extractedData } = convertRawLatexToTemplate(text);
       setImportContent(templateContent);
-      setImportExtractedData(extractedData);
+      setImportExtractedData(extractedData.personal ?? null);
       setActiveTab("import");
     };
     reader.onerror = () => {
@@ -111,16 +118,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
       setImportSuccess(`Template "${newTemplate.name}" successfully imported and saved!`);
       onTemplatesUpdated();
 
-      // Optionally offer to apply new template
-      onSelectTemplate(newTemplate);
-
-      if (
-        onImportDataIntoResume &&
-        importExtractedData &&
-        importExtractedData.personal?.name
-      ) {
-        onImportDataIntoResume(importExtractedData);
-      }
+      onSelectTemplate(newTemplate, importExtractedData ?? undefined);
 
       setTimeout(() => {
         onClose();
@@ -150,11 +148,16 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="modal-content template-modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="template-manager-title"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h2>Resume Templates</h2>
+          <h2 id="template-manager-title">Resume Templates</h2>
           <button
             className="btn-close"
             onClick={onClose}
@@ -232,7 +235,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
 
                     <div className="template-features">
                       <span className="feature-tag">
-                        Sections: {analysis.detectedSections.join(", ") || "Standard"}
+                        Sections:{" "}
+                        {analysis.detectedSections.map((sec) => SECTION_LABELS[sec] || sec).join(", ") ||
+                          "Standard"}
                       </span>
                       {analysis.customVariables.length > 0 && (
                         <span className="feature-tag custom-var-tag">
@@ -293,9 +298,10 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
               <IconFile size={36} className="dropzone-icon" />
               <h3>Upload Your LaTeX Resume Template</h3>
               <p>
-                Upload any <code>.tex</code> template file. Vitae automatically detects its
-                structure, extracts fields (Name, Contact, Experience, Education, Skills), and
-                saves it in your persistent templates library.
+                Upload any <code>.tex</code> file. Vitae detects your name and contact details
+                (email, phone, GitHub, LinkedIn) and turns them into form fields; the rest of the
+                layout is kept exactly as written. Templates that already use{" "}
+                <code>{"{{placeholders}}"}</code> are imported as-is.
               </p>
               <button
                 className="btn-primary"
@@ -309,8 +315,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
             {importContent && (
               <div className="import-preview-section">
                 <div className="form-group">
-                  <label>Template Name *</label>
+                  <label htmlFor="import-template-name">Template Name *</label>
                   <input
+                    id="import-template-name"
                     type="text"
                     value={importName}
                     onChange={(e) => setImportName(e.target.value)}
@@ -319,8 +326,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                 </div>
 
                 <div className="form-group">
-                  <label>Description</label>
+                  <label htmlFor="import-template-desc">Description</label>
                   <input
+                    id="import-template-desc"
                     type="text"
                     value={importDesc}
                     onChange={(e) => setImportDesc(e.target.value)}
@@ -328,35 +336,33 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                   />
                 </div>
 
-                {importExtractedData && (
+                {importExtractedData && Object.keys(importExtractedData).length > 0 && (
                   <div className="extracted-notice">
                     <h4>
                       <IconSearch size={14} />
-                      <span>Extracted Resume Structure</span>
+                      <span>Detected details</span>
                     </h4>
                     <ul>
-                      {importExtractedData.personal?.name && (
-                        <li>
-                          <strong>Name:</strong> {importExtractedData.personal.name}
-                        </li>
-                      )}
-                      {importExtractedData.personal?.email && (
-                        <li>
-                          <strong>Email:</strong> {importExtractedData.personal.email}
-                        </li>
-                      )}
-                      {importExtractedData.personal?.phone && (
-                        <li>
-                          <strong>Phone:</strong> {importExtractedData.personal.phone}
-                        </li>
+                      {(["name", "email", "phone", "github", "linkedin"] as const).map(
+                        (key) =>
+                          importExtractedData[key] && (
+                            <li key={key}>
+                              <strong>{key[0].toUpperCase() + key.slice(1)}:</strong>{" "}
+                              {importExtractedData[key]}
+                            </li>
+                          )
                       )}
                     </ul>
+                    <p className="extracted-hint">
+                      These fill in any of your form fields that are still empty.
+                    </p>
                   </div>
                 )}
 
                 <div className="form-group">
-                  <label>Template LaTeX Source (with placeholders)</label>
+                  <label htmlFor="import-template-source">Template LaTeX Source (with placeholders)</label>
                   <textarea
+                    id="import-template-source"
                     rows={8}
                     className="code-textarea"
                     value={importContent}
@@ -396,10 +402,12 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
           <div className="submodal-overlay" onClick={() => setViewingTemplate(null)}>
             <div
               className="submodal-content"
+              role="dialog"
+              aria-labelledby="template-source-title"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="submodal-header">
-                <h3>{viewingTemplate.name} - Template Source</h3>
+                <h3 id="template-source-title">{viewingTemplate.name} - Template Source</h3>
                 <button
                   className="btn-close"
                   onClick={() => setViewingTemplate(null)}

@@ -21,13 +21,13 @@
         "all": false,
         "open": true
       },
-      "fs": {
-        "all": true,
-        "scope": ["$APPDATA/**", "$RESOURCE/**", "$TEMP/**", "**"]
+      "process": {
+        "all": false,
+        "relaunch": true
       },
-      "protocol": {
-        "asset": true,
-        "assetScope": ["$APPDATA/**", "$RESOURCE/**", "$TEMP/**", "**"]
+      "window": {
+        "all": false,
+        "close": true
       }
     },
     "updater": {
@@ -68,7 +68,7 @@
       }
     },
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost blob: data:; font-src 'self' data:; connect-src 'self' ipc: tauri: https://github.com https://api.github.com https://*.githubusercontent.com; frame-src 'self' asset: https://asset.localhost blob: data:; worker-src 'self' blob:;"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ipc: tauri: https://github.com https://api.github.com https://*.githubusercontent.com; frame-src 'self' blob: data:; worker-src 'self' blob:;"
     },
     "windows": [
       {

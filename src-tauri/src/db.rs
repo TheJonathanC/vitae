@@ -37,289 +37,20 @@ pub fn escape_latex(input: &str) -> String {
             '_' => escaped.push_str(r"\_"),
             '{' => escaped.push_str(r"\{"),
             '}' => escaped.push_str(r"\}"),
+            // OT1-encoded fonts would print these as ¡, ¿ and an em dash.
+            '<' => escaped.push_str(r"\textless{}"),
+            '>' => escaped.push_str(r"\textgreater{}"),
+            '|' => escaped.push_str(r"\textbar{}"),
             _ => escaped.push(c),
         }
     }
     escaped
 }
 
-const TEMPLATE_MODERN: &str = r#"\documentclass[11pt,a4paper]{article}
-\usepackage[utf8]{inputenc}
-\usepackage[empty]{fullpage}
-\usepackage{titlesec}
-\usepackage{hyperref}
-\usepackage{enumitem}
-
-\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
-\urlstyle{same}
-
-\addtolength{\oddsidemargin}{-0.5in}
-\addtolength{\evensidemargin}{-0.5in}
-\addtolength{\textwidth}{1in}
-\addtolength{\topmargin}{-0.5in}
-\addtolength{\textheight}{1.0in}
-
-\raggedbottom
-\raggedright
-\setlength{\tabcolsep}{0in}
-
-\titleformat{\section}{
-  \vspace{-4pt}\scshape\raggedright\large
-}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
-
-\begin{document}
-
-\begin{center}
-    {\Huge \scshape {{name}}} \\ \vspace{2pt}
-    {{#title}}{\large \textit{{{title}}}} \\ \vspace{2pt}{{/title}}
-    \small {{phone}} {{#email}}$|$ \href{mailto:{{email}}}{{{email}}}{{/email}} {{#website}}$|$ \href{{{website}}}{{{website}}}{{/website}} {{#linkedin}}$|$ \href{https://{{linkedin}}}{{{linkedin}}}{{/linkedin}} {{#github}}$|$ \href{https://{{github}}}{{{github}}}{{/github}} {{#location}}$|$ {{location}}{{/location}}
-\end{center}
-
-{{#summary}}
-\section{Summary}
-{{summary}}
-{{/summary}}
-
-{{#experience}}
-\section{Experience}
-{{#items}}
-\textbf{{{role}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
-\textit{{{company}}}{{#location}} \hfill {{location}}{{/location}}
-{{#highlights}}
-\begin{itemize}[noitemsep,topsep=1pt]
-{{#bullets}}
-    \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-\vspace{4pt}
-{{/items}}
-{{/experience}}
-
-{{#education}}
-\section{Education}
-{{#items}}
-\textbf{{{institution}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
-\textit{{{degree}}}{{#location}} \hfill {{location}}{{/location}}
-{{#details}}\\\small {{details}}{{/details}}
-\vspace{4pt}
-{{/items}}
-{{/education}}
-
-{{#projects}}
-\section{Projects}
-{{#items}}
-\textbf{{{name}}}{{#technologies}} $|$ \textit{{{technologies}}}{{/technologies}}{{#link}} \hfill \href{{{link}}}{Link}{{/link}}
-{{#highlights}}
-\begin{itemize}[noitemsep,topsep=1pt]
-{{#bullets}}
-    \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-\vspace{4pt}
-{{/items}}
-{{/projects}}
-
-{{#skills}}
-\section{Technical Skills}
-{{#items}}
-\textbf{{{category}}}: {{skills}} \\
-{{/items}}
-{{/skills}}
-
-{{#customSections}}
-\section{{{title}}}
-{{#content}}{{content}} \\{{/content}}
-{{#highlights}}
-\begin{itemize}[noitemsep,topsep=1pt]
-{{#bullets}}
-    \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-{{/customSections}}
-
-\end{document}"#;
-
-const TEMPLATE_CLASSIC: &str = r#"\documentclass[10pt,letterpaper]{article}
-\usepackage[utf8]{inputenc}
-\usepackage[margin=0.75in]{geometry}
-\usepackage{titlesec}
-\usepackage{hyperref}
-\usepackage{enumitem}
-
-\hypersetup{colorlinks=false,pdfborder={0 0 0}}
-
-\titleformat{\section}{\large\bfseries\scshape}{}{0em}{}[\titlerule]
-\titlespacing{\section}{0pt}{10pt}{5pt}
-
-\begin{document}
-\pagestyle{empty}
-
-\begin{center}
-    {\huge \textbf{{{name}}}} \\ \vspace{4pt}
-    {{#title}}{\large \textit{{{title}}}} \\ \vspace{2pt}{{/title}}
-    \small {{#location}}{{location}} \ $\cdot$ \ {{/location}}{{phone}}{{#email}} \ $\cdot$ \ {{email}}{{/email}}{{#website}} \ $\cdot$ \ {{website}}{{/website}}{{#linkedin}} \ $\cdot$ \ {{linkedin}}{{/linkedin}}
-\end{center}
-
-{{#summary}}
-\section{Professional Summary}
-{{summary}}
-{{/summary}}
-
-{{#education}}
-\section{Education}
-{{#items}}
-\textbf{{{institution}}}{{#location}}, {{location}}{{/location}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
-\textit{{{degree}}}
-{{#details}}\\\small {{details}}{{/details}}
-\vspace{4pt}
-{{/items}}
-{{/education}}
-
-{{#experience}}
-\section{Professional Experience}
-{{#items}}
-\textbf{{{role}}}, {{company}}{{#location}} --- {{location}}{{/location}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
-{{#highlights}}
-\begin{itemize}[leftmargin=1.5em,noitemsep,topsep=2pt]
-{{#bullets}}
-    \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-\vspace{4pt}
-{{/items}}
-{{/experience}}
-
-{{#projects}}
-\section{Key Projects}
-{{#items}}
-\textbf{{{name}}}{{#technologies}} (\textit{{{technologies}}}){{/technologies}}{{#link}} \hfill {{link}}{{/link}}
-{{#highlights}}
-\begin{itemize}[leftmargin=1.5em,noitemsep,topsep=2pt]
-{{#bullets}}
-    \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-\vspace{4pt}
-{{/items}}
-{{/projects}}
-
-{{#skills}}
-\section{Skills \& Competencies}
-{{#items}}
-\textbf{{{category}}}: {{skills}} \\
-{{/items}}
-{{/skills}}
-
-{{#customSections}}
-\section{{{title}}}
-{{#content}}{{content}} \\{{/content}}
-{{#highlights}}
-\begin{itemize}[leftmargin=1.5em,noitemsep,topsep=2pt]
-{{#bullets}}
-    \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-{{/customSections}}
-
-\end{document}"#;
-
-const TEMPLATE_MINIMAL: &str = r#"\documentclass[10pt,letterpaper]{article}
-\usepackage[utf8]{inputenc}
-\usepackage[margin=0.6in]{geometry}
-\usepackage{hyperref}
-\usepackage{enumitem}
-
-\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue}
-\urlstyle{same}
-
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{4pt}
-
-\newcommand{\resumesection}[1]{%
-  \vspace{6pt}%
-  {\large\textbf{\uppercase{#1}}}%
-  \vspace{2pt}\hrule\vspace{4pt}%
-}
-
-\begin{document}
-\pagestyle{empty}
-
-{\LARGE \textbf{{{name}}}} \\
-{{#title}}{\textbf{{{title}}}} \\{{/title}}
-\small {{#email}}{{email}} \ $\vert$ \ {{/email}}{{phone}}{{#location}} \ $\vert$ \ {{location}}{{/location}}{{#github}} \ $\vert$ \ \href{https://{{github}}}{{{github}}}{{/github}}{{#linkedin}} \ $\vert$ \ \href{https://{{linkedin}}}{{{linkedin}}}{{/linkedin}}{{#website}} \ $\vert$ \ \href{{{website}}}{{{website}}}{{/website}}
-
-{{#summary}}
-\resumesection{About}
-{{summary}}
-{{/summary}}
-
-{{#experience}}
-\resumesection{Experience}
-{{#items}}
-\textbf{{{role}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
-\textit{{{company}}}{{#location}} \hfill {{location}}{{/location}}
-{{#highlights}}
-\begin{itemize}[leftmargin=1.2em,noitemsep,topsep=1pt]
-{{#bullets}}
-  \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-\vspace{2pt}
-{{/items}}
-{{/experience}}
-
-{{#education}}
-\resumesection{Education}
-{{#items}}
-\textbf{{{degree}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
-\textit{{{institution}}}{{#location}} \hfill {{location}}{{/location}}
-{{#details}}\\\small {{details}}{{/details}}
-\vspace{2pt}
-{{/items}}
-{{/education}}
-
-{{#projects}}
-\resumesection{Projects}
-{{#items}}
-\textbf{{{name}}}{{#technologies}} --- \textit{{{technologies}}}{{/technologies}}{{#link}} \hfill \href{{{link}}}{{{link}}}{{/link}}
-{{#highlights}}
-\begin{itemize}[leftmargin=1.2em,noitemsep,topsep=1pt]
-{{#bullets}}
-  \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-\vspace{2pt}
-{{/items}}
-{{/projects}}
-
-{{#skills}}
-\resumesection{Skills}
-{{#items}}
-\textbf{{{category}}}: {{skills}} \\
-{{/items}}
-{{/skills}}
-
-{{#customSections}}
-\resumesection{{{title}}}
-{{#content}}{{content}} \\{{/content}}
-{{#highlights}}
-\begin{itemize}[leftmargin=1.2em,noitemsep,topsep=1pt]
-{{#bullets}}
-  \item {{bullet}}
-{{/bullets}}
-\end{itemize}
-{{/highlights}}
-{{/customSections}}
-
-\end{document}"#;
+// Shared with the frontend (src/utils/templatePresets.ts) so the two can't drift.
+const TEMPLATE_MODERN: &str = include_str!("../templates/modern.tex");
+const TEMPLATE_CLASSIC: &str = include_str!("../templates/classic.tex");
+const TEMPLATE_MINIMAL: &str = include_str!("../templates/minimal.tex");
 
 fn seed_builtin_templates(conn: &Connection) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
@@ -345,19 +76,14 @@ fn seed_builtin_templates(conn: &Connection) -> Result<()> {
         ),
     ];
 
+    // Upsert so template fixes shipped in an app update reach existing installs.
+    // Built-ins are read-only in the UI, so there are no user edits to preserve.
     for (id, name, desc, content) in presets {
-        let exists: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM templates WHERE id = ?1",
-            [id],
-            |row| row.get(0),
+        conn.execute(
+            "INSERT INTO templates (id, name, description, content, is_builtin, created_at) VALUES (?1, ?2, ?3, ?4, 1, ?5)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, content = excluded.content, is_builtin = 1",
+            params![id, name, desc, content, &now],
         )?;
-
-        if exists == 0 {
-            conn.execute(
-                "INSERT INTO templates (id, name, description, content, is_builtin, created_at) VALUES (?1, ?2, ?3, ?4, 1, ?5)",
-                params![id, name, desc, content, &now],
-            )?;
-        }
     }
 
     Ok(())
@@ -725,6 +451,7 @@ mod tests {
         assert_eq!(escape_latex(r"back\slash"), r"back\textbackslash{}slash");
         assert_eq!(escape_latex("{braces}"), r"\{braces\}");
         assert_eq!(escape_latex("~tilde^caret"), r"\textasciitilde{}tilde\textasciicircum{}caret");
+        assert_eq!(escape_latex("<1ms | >5x"), r"\textless{}1ms \textbar{} \textgreater{}5x");
     }
 
     #[test]
@@ -754,6 +481,14 @@ mod tests {
         // Get single template
         let modern = get_template(&db_path, "template-modern").unwrap();
         assert_eq!(modern.name, "Modern Professional");
+
+        // Re-initializing refreshes built-in content instead of keeping a stale copy
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute("UPDATE templates SET content = 'stale' WHERE id = 'template-modern'", []).unwrap();
+        drop(conn);
+        init_database(&db_path).unwrap();
+        assert_eq!(get_template(&db_path, "template-modern").unwrap().content, TEMPLATE_MODERN);
+        assert_eq!(get_all_templates(&db_path).unwrap().iter().filter(|t| t.is_builtin).count(), 3);
 
         // Try deleting builtin template -> should fail
         assert!(delete_template(&db_path, "template-modern").is_err());

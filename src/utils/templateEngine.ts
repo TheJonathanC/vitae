@@ -48,6 +48,16 @@ export function escapeLatex(input: string | undefined | null): string {
       case "}":
         result += "\\}";
         break;
+      // OT1-encoded fonts (the LaTeX default) would print these as ¡, ¿ and an em dash.
+      case "<":
+        result += "\\textless{}";
+        break;
+      case ">":
+        result += "\\textgreater{}";
+        break;
+      case "|":
+        result += "\\textbar{}";
+        break;
       default:
         result += char;
     }
@@ -56,17 +66,58 @@ export function escapeLatex(input: string | undefined | null): string {
 }
 
 /**
- * Clean URL escaping for LaTeX \href links where special characters like % and #
- * need special handling without breaking the URL structure.
+ * Escapes a URL for the first argument of \href / \url. hyperref takes `_`, `&`
+ * and `~` literally there, but `%` and `#` must be escaped, and characters that
+ * would unbalance or end the argument are percent-encoded.
+ */
+export function escapeLatexUrl(url: string | undefined | null): string {
+  if (!url) return "";
+  let result = "";
+  for (const char of String(url).trim()) {
+    switch (char) {
+      case "%":
+        result += "\\%";
+        break;
+      case "#":
+        result += "\\#";
+        break;
+      case "\\":
+        result += "\\%5C";
+        break;
+      case "{":
+        result += "\\%7B";
+        break;
+      case "}":
+        result += "\\%7D";
+        break;
+      default:
+        result += /\s/.test(char) ? "\\%20" : char;
+    }
+  }
+  return result;
+}
+
+/** Adds `https://` to URLs entered without a scheme (e.g. "github.com/me"). */
+export function normalizeUrl(url: string | undefined | null): string {
+  const clean = (url || "").trim();
+  if (!clean) return "";
+  return /^[a-z][a-z0-9+.-]*:/i.test(clean) ? clean : `https://${clean.replace(/^\/+/, "")}`;
+}
+
+/**
+ * Normalizes and escapes a user-entered URL for use as an \href target.
  */
 export function sanitizeLatexUrl(url: string | undefined | null): string {
-  if (!url) return "";
-  let clean = url.trim();
-  // Strip protocol for display if needed, but for href keep valid URL
-  if (!clean.startsWith("http://") && !clean.startsWith("https://") && !clean.startsWith("mailto:")) {
-    clean = "https://" + clean;
-  }
-  return clean.replace(/#/g, "\\#").replace(/%/g, "\\%");
+  return escapeLatexUrl(normalizeUrl(url));
+}
+
+/** Collision-free ids for form entries (Date.now() repeats within a millisecond). */
+export function createId(prefix: string): string {
+  const random =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
 }
 
 /**
@@ -151,6 +202,111 @@ export function getDefaultResumeData(name: string = "Alex Morgan"): ResumeData {
     customSections: [],
     customVariables: {},
   };
+}
+
+/**
+ * A blank resume for new documents, so no sample contact details can end up
+ * in a real resume by accident. Inputs show examples as placeholders instead.
+ */
+export function getEmptyResumeData(): ResumeData {
+  return {
+    personal: {
+      name: "",
+      title: "",
+      email: "",
+      phone: "",
+      location: "",
+      website: "",
+      linkedin: "",
+      github: "",
+      summary: "",
+    },
+    experience: [],
+    education: [],
+    projects: [],
+    skills: [],
+    customSections: [],
+    customVariables: {},
+  };
+}
+
+const asString = (value: unknown): string => (typeof value === "string" ? value : "");
+const asObject = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+const asArray = (value: unknown): Record<string, unknown>[] =>
+  Array.isArray(value) ? value.map(asObject) : [];
+const asStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/**
+ * Coerces stored resume_data JSON (possibly from an older version, or partially
+ * written) into a complete ResumeData so the form never reads a missing array.
+ */
+export function normalizeResumeData(raw: unknown): ResumeData {
+  const data = asObject(raw);
+  const personal = asObject(data.personal);
+  const customVariables = Object.fromEntries(
+    Object.entries(asObject(data.customVariables)).filter(([, v]) => typeof v === "string")
+  ) as Record<string, string>;
+
+  const normalized: ResumeData = {
+    personal: {
+      name: asString(personal.name),
+      title: asString(personal.title),
+      email: asString(personal.email),
+      phone: asString(personal.phone),
+      location: asString(personal.location),
+      website: asString(personal.website),
+      linkedin: asString(personal.linkedin),
+      github: asString(personal.github),
+      summary: asString(personal.summary),
+    },
+    experience: asArray(data.experience).map((item) => ({
+      id: asString(item.id) || createId("exp"),
+      role: asString(item.role),
+      company: asString(item.company),
+      location: asString(item.location),
+      startDate: asString(item.startDate),
+      endDate: asString(item.endDate),
+      bullets: asStringArray(item.bullets),
+    })),
+    education: asArray(data.education).map((item) => ({
+      id: asString(item.id) || createId("edu"),
+      degree: asString(item.degree),
+      institution: asString(item.institution),
+      location: asString(item.location),
+      startDate: asString(item.startDate),
+      endDate: asString(item.endDate),
+      details: asString(item.details),
+    })),
+    projects: asArray(data.projects).map((item) => ({
+      id: asString(item.id) || createId("proj"),
+      name: asString(item.name),
+      technologies: asString(item.technologies),
+      link: asString(item.link),
+      bullets: asStringArray(item.bullets),
+    })),
+    skills: asArray(data.skills).map((item) => ({
+      id: asString(item.id) || createId("skill"),
+      category: asString(item.category),
+      skills: asString(item.skills),
+    })),
+    customSections: asArray(data.customSections).map((item) => ({
+      id: asString(item.id) || createId("sec"),
+      title: asString(item.title),
+      content: asString(item.content),
+      bullets: asStringArray(item.bullets),
+    })),
+    customVariables,
+  };
+
+  if (Array.isArray(data.sectionOrder)) {
+    normalized.sectionOrder = asStringArray(data.sectionOrder);
+  }
+  if (data.sourceEditedManually === true) {
+    normalized.sourceEditedManually = true;
+  }
+  return normalized;
 }
 
 /**
@@ -372,6 +528,46 @@ export function reorderTemplateSections(
 }
 
 /**
+ * Marks placeholders inside \href{...} / \url{...} targets so they get URL
+ * escaping instead of text escaping. A placeholder that starts the target
+ * (optionally after a hard-coded http(s):// prefix) is treated as an absolute
+ * URL: the prefix is dropped and the value gets https:// only if it has no
+ * scheme, so "https://github.com/me" and "github.com/me" both work.
+ */
+function markUrlPlaceholders(template: string): string {
+  return template.replace(
+    /\\(href|url)\s*\{((?:[^{}]|\{\{[a-zA-Z0-9_]+\}\})*)\}/g,
+    (_: string, command: string, target: string) => {
+      const marked = target.replace(
+        /(https?:\/\/)?\{\{([a-zA-Z0-9_]+)\}\}/g,
+        (_m: string, _proto: string | undefined, key: string, offset: number) =>
+          offset === 0 ? `{{${key}:absurl}}` : `{{${key}:url}}`
+      );
+      return `\\${command}{${marked}}`;
+    }
+  );
+}
+
+/**
+ * Replaces {{key}} placeholders with escaped values from `context`. Values are
+ * stored raw; escaping depends on where the placeholder sits (text vs URL).
+ * Uses replacer functions so `$&`, `$'` etc. in user text stay literal.
+ */
+function substitute(template: string, context: Record<string, unknown>): string {
+  return template.replace(
+    /\{\{([a-zA-Z0-9_]+)(?::(url|absurl))?\}\}/g,
+    (_: string, key: string, mode: string | undefined) => {
+      const value = context[key];
+      if (value === undefined || value === null || value === false) return "";
+      const raw = String(value);
+      if (mode === "absurl") return sanitizeLatexUrl(raw);
+      if (mode === "url") return escapeLatexUrl(raw);
+      return escapeLatex(raw);
+    }
+  );
+}
+
+/**
  * Renders a full template given ResumeData.
  */
 export function renderTemplate(templateContent: string, resumeData: ResumeData): string {
@@ -381,281 +577,173 @@ export function renderTemplate(templateContent: string, resumeData: ResumeData):
     output = reorderTemplateSections(output, resumeData.sectionOrder);
   }
 
-  const personal = resumeData.personal || { name: "" };
+  output = markUrlPlaceholders(output);
+
+  const personal: Partial<ResumeData["personal"]> = resumeData.personal || {};
   const customVars = resumeData.customVariables || {};
 
-  // Build root context for variables
-  const rootContext: Record<string, any> = {
+  // Build root context for variables (raw values; escaped on substitution)
+  const rootContext: Record<string, unknown> = {
     ...customVars,
-    name: escapeLatex(personal.name),
-    title: escapeLatex(personal.title),
-    email: escapeLatex(personal.email),
-    phone: escapeLatex(personal.phone),
-    location: escapeLatex(personal.location),
-    website: escapeLatex(personal.website),
-    linkedin: escapeLatex(personal.linkedin),
-    github: escapeLatex(personal.github),
-    summary: escapeLatex(personal.summary),
+    name: personal.name,
+    title: personal.title,
+    email: personal.email,
+    phone: personal.phone,
+    location: personal.location,
+    website: personal.website,
+    linkedin: personal.linkedin,
+    github: personal.github,
+    summary: personal.summary,
   };
 
-  // 1. Process Section: Experience
-  output = output.replace(
-    /\{\{#experience\}\}([\s\S]*?)\{\{\/experience\}\}/g,
-    (_: string, sectionContent: string) => {
-      const items = resumeData.experience || [];
-      if (items.length === 0) return "";
+  const renderList = <T,>(
+    sectionKey: string,
+    items: T[],
+    renderItem: (template: string, item: T) => string
+  ) => {
+    output = output.replace(
+      new RegExp(`\\{\\{#${sectionKey}\\}\\}([\\s\\S]*?)\\{\\{\\/${sectionKey}\\}\\}`, "g"),
+      (_: string, sectionContent: string) => {
+        if (items.length === 0) return "";
 
-      // Check if sectionContent has {{#items}}...{{/items}}
-      if (/\{\{#items\}\}/.test(sectionContent)) {
-        return sectionContent.replace(
-          /\{\{#items\}\}([\s\S]*?)\{\{\/items\}\}/g,
-          (_: string, itemTemplate: string) => {
-            return items
-              .map((item) => renderExperienceItem(itemTemplate, item))
-              .join("\n");
-          }
-        );
+        // Section body with an explicit {{#items}}...{{/items}} repeater
+        if (/\{\{#items\}\}/.test(sectionContent)) {
+          return sectionContent.replace(
+            /\{\{#items\}\}([\s\S]*?)\{\{\/items\}\}/g,
+            (_: string, itemTemplate: string) =>
+              items.map((item) => renderItem(itemTemplate, item)).join("\n")
+          );
+        }
+
+        // Direct repeat of sectionContent
+        return items.map((item) => renderItem(sectionContent, item)).join("\n");
       }
+    );
+  };
 
-      // Direct repeat of sectionContent
-      return items.map((item) => renderExperienceItem(sectionContent, item)).join("\n");
-    }
-  );
+  renderList("experience", resumeData.experience || [], renderExperienceItem);
+  renderList("education", resumeData.education || [], renderEducationItem);
+  renderList("projects", resumeData.projects || [], renderProjectItem);
+  renderList("skills", resumeData.skills || [], renderSkillItem);
 
-  // 2. Process Section: Education
-  output = output.replace(
-    /\{\{#education\}\}([\s\S]*?)\{\{\/education\}\}/g,
-    (_: string, sectionContent: string) => {
-      const items = resumeData.education || [];
-      if (items.length === 0) return "";
-
-      if (/\{\{#items\}\}/.test(sectionContent)) {
-        return sectionContent.replace(
-          /\{\{#items\}\}([\s\S]*?)\{\{\/items\}\}/g,
-          (_: string, itemTemplate: string) => {
-            return items
-              .map((item) => renderEducationItem(itemTemplate, item))
-              .join("\n");
-          }
-        );
-      }
-
-      return items.map((item) => renderEducationItem(sectionContent, item)).join("\n");
-    }
-  );
-
-  // 3. Process Section: Projects
-  output = output.replace(
-    /\{\{#projects\}\}([\s\S]*?)\{\{\/projects\}\}/g,
-    (_: string, sectionContent: string) => {
-      const items = resumeData.projects || [];
-      if (items.length === 0) return "";
-
-      if (/\{\{#items\}\}/.test(sectionContent)) {
-        return sectionContent.replace(
-          /\{\{#items\}\}([\s\S]*?)\{\{\/items\}\}/g,
-          (_: string, itemTemplate: string) => {
-            return items
-              .map((item) => renderProjectItem(itemTemplate, item))
-              .join("\n");
-          }
-        );
-      }
-
-      return items.map((item) => renderProjectItem(sectionContent, item)).join("\n");
-    }
-  );
-
-  // 4. Process Section: Skills
-  output = output.replace(
-    /\{\{#skills\}\}([\s\S]*?)\{\{\/skills\}\}/g,
-    (_: string, sectionContent: string) => {
-      const items = resumeData.skills || [];
-      if (items.length === 0) return "";
-
-      if (/\{\{#items\}\}/.test(sectionContent)) {
-        return sectionContent.replace(
-          /\{\{#items\}\}([\s\S]*?)\{\{\/items\}\}/g,
-          (_: string, itemTemplate: string) => {
-            return items
-              .map((item) => renderSkillItem(itemTemplate, item))
-              .join("\n");
-          }
-        );
-      }
-
-      return items.map((item) => renderSkillItem(sectionContent, item)).join("\n");
-    }
-  );
-
-  // 5. Process Section: CustomSections
+  // Custom sections repeat the whole block (no {{#items}} wrapper)
   output = output.replace(
     /\{\{#customSections\}\}([\s\S]*?)\{\{\/customSections\}\}/g,
     (_: string, sectionContent: string) => {
       const sections = resumeData.customSections || [];
-      if (sections.length === 0) return "";
-
-      return sections
-        .map((sec) => renderCustomSection(sectionContent, sec))
-        .join("\n");
+      return sections.map((sec) => renderCustomSection(sectionContent, sec)).join("\n");
     }
   );
 
-  // 6. Process Top-level conditionals
+  // Top-level conditionals, then scalar variables
   output = processConditionals(output, rootContext);
-
-  // 7. Replace scalar variables {{key}}
-  output = output.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_: string, key: string) => {
-    if (key in rootContext) {
-      return rootContext[key] !== undefined ? String(rootContext[key]) : "";
-    }
-    return "";
-  });
-
-  return output;
+  return substitute(output, rootContext);
 }
 
 function renderBullets(template: string, bullets: string[]): string {
   const filtered = bullets.filter((b) => b.trim().length > 0);
-  if (filtered.length === 0) return "";
+  if (filtered.length === 0) {
+    return template
+      .replace(/\{\{#highlights\}\}[\s\S]*?\{\{\/highlights\}\}/g, "")
+      .replace(/\{\{#bullets\}\}[\s\S]*?\{\{\/bullets\}\}/g, "");
+  }
 
-  // Replace {{#highlights}}...{{#bullets}}...{{bullet}}...{{/bullets}}...{{/highlights}}
-  let res = template.replace(
+  const renderBulletList = (_: string, bulletTemplate: string) =>
+    filtered.map((b) => substitute(bulletTemplate, { bullet: b })).join("");
+
+  // {{#highlights}}...{{#bullets}}...{{bullet}}...{{/bullets}}...{{/highlights}}
+  const res = template.replace(
     /\{\{#highlights\}\}([\s\S]*?)\{\{\/highlights\}\}/g,
-    (_: string, hlContent: string) => {
-      return hlContent.replace(
-        /\{\{#bullets\}\}([\s\S]*?)\{\{\/bullets\}\}/g,
-        (_: string, bulletTemplate: string) => {
-          return filtered
-            .map((b) =>
-              bulletTemplate.replace(/\{\{bullet\}\}/g, escapeLatex(b))
-            )
-            .join("");
-        }
-      );
-    }
+    (_: string, hlContent: string) =>
+      hlContent.replace(/\{\{#bullets\}\}([\s\S]*?)\{\{\/bullets\}\}/g, renderBulletList)
   );
 
   // Fallback for direct {{#bullets}}...{{/bullets}}
-  res = res.replace(
-    /\{\{#bullets\}\}([\s\S]*?)\{\{\/bullets\}\}/g,
-    (_, bulletTemplate) => {
-      return filtered
-        .map((b) => bulletTemplate.replace(/\{\{bullet\}\}/g, escapeLatex(b)))
-        .join("");
-    }
-  );
-
-  return res;
+  return res.replace(/\{\{#bullets\}\}([\s\S]*?)\{\{\/bullets\}\}/g, renderBulletList);
 }
 
-function renderExperienceItem(template: string, item: ResumeExperienceItem): string {
-  const context: Record<string, any> = {
-    role: escapeLatex(item.role),
-    company: escapeLatex(item.company),
-    location: escapeLatex(item.location),
-    startDate: escapeLatex(item.startDate),
-    endDate: escapeLatex(item.endDate),
-    highlights: item.bullets && item.bullets.length > 0,
-  };
-
+function renderItem(
+  template: string,
+  context: Record<string, unknown>,
+  bullets?: string[]
+): string {
   let rendered = processConditionals(template, context);
+  rendered = renderBullets(rendered, bullets || []);
+  return substitute(rendered, context);
+}
 
-  // Render bullets
-  if (item.bullets && item.bullets.length > 0) {
-    rendered = renderBullets(rendered, item.bullets);
-  } else {
-    // Remove highlights block
-    rendered = rendered.replace(/\{\{#highlights\}\}[\s\S]*?\{\{\/highlights\}\}/g, "");
-    rendered = rendered.replace(/\{\{#bullets\}\}[\s\S]*?\{\{\/bullets\}\}/g, "");
-  }
+const hasBullets = (bullets?: string[]) => (bullets || []).some((b) => b.trim().length > 0);
 
-  // Replace scalars
-  return rendered.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    return context[key] !== undefined ? String(context[key]) : "";
-  });
+function renderExperienceItem(template: string, item: ResumeExperienceItem): string {
+  return renderItem(
+    template,
+    {
+      role: item.role,
+      company: item.company,
+      location: item.location,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      highlights: hasBullets(item.bullets),
+    },
+    item.bullets
+  );
 }
 
 function renderEducationItem(template: string, item: ResumeEducationItem): string {
-  const context: Record<string, any> = {
-    institution: escapeLatex(item.institution),
-    degree: escapeLatex(item.degree),
-    location: escapeLatex(item.location),
-    startDate: escapeLatex(item.startDate),
-    endDate: escapeLatex(item.endDate),
-    details: escapeLatex(item.details),
-  };
-
-  let rendered = processConditionals(template, context);
-
-  return rendered.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    return context[key] !== undefined ? String(context[key]) : "";
+  return renderItem(template, {
+    institution: item.institution,
+    degree: item.degree,
+    location: item.location,
+    startDate: item.startDate,
+    endDate: item.endDate,
+    details: item.details,
   });
 }
 
 function renderProjectItem(template: string, item: ResumeProjectItem): string {
-  const context: Record<string, any> = {
-    name: escapeLatex(item.name),
-    technologies: escapeLatex(item.technologies),
-    link: item.link ? sanitizeLatexUrl(item.link) : "",
-    highlights: item.bullets && item.bullets.length > 0,
-  };
-
-  let rendered = processConditionals(template, context);
-
-  if (item.bullets && item.bullets.length > 0) {
-    rendered = renderBullets(rendered, item.bullets);
-  } else {
-    rendered = rendered.replace(/\{\{#highlights\}\}[\s\S]*?\{\{\/highlights\}\}/g, "");
-    rendered = rendered.replace(/\{\{#bullets\}\}[\s\S]*?\{\{\/bullets\}\}/g, "");
-  }
-
-  return rendered.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    return context[key] !== undefined ? String(context[key]) : "";
-  });
+  return renderItem(
+    template,
+    {
+      name: item.name,
+      technologies: item.technologies,
+      link: item.link,
+      highlights: hasBullets(item.bullets),
+    },
+    item.bullets
+  );
 }
 
 function renderSkillItem(template: string, item: ResumeSkillItem): string {
-  const context: Record<string, any> = {
-    category: escapeLatex(item.category),
-    skills: escapeLatex(item.skills),
-  };
-
-  let rendered = processConditionals(template, context);
-
-  return rendered.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    return context[key] !== undefined ? String(context[key]) : "";
+  return renderItem(template, {
+    category: item.category,
+    skills: item.skills,
   });
 }
 
 function renderCustomSection(template: string, section: ResumeCustomSection): string {
-  const context: Record<string, any> = {
-    title: escapeLatex(section.title),
-    content: escapeLatex(section.content),
-    highlights: section.bullets && section.bullets.length > 0,
-  };
-
-  let rendered = processConditionals(template, context);
-
-  if (section.bullets && section.bullets.length > 0) {
-    rendered = renderBullets(rendered, section.bullets);
-  } else {
-    rendered = rendered.replace(/\{\{#highlights\}\}[\s\S]*?\{\{\/highlights\}\}/g, "");
-    rendered = rendered.replace(/\{\{#bullets\}\}[\s\S]*?\{\{\/bullets\}\}/g, "");
-  }
-
-  return rendered.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    return context[key] !== undefined ? String(context[key]) : "";
-  });
+  return renderItem(
+    template,
+    {
+      title: section.title,
+      content: section.content,
+      highlights: hasBullets(section.bullets),
+    },
+    section.bullets
+  );
 }
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Intelligently converts an arbitrary user-uploaded LaTeX file into a Vitae template,
  * simultaneously extracting pre-filled resume data from the text.
+ *
+ * Only contact details are detected; everything else stays as written in the
+ * template. extractedData.personal contains only fields that were found.
  */
 export function convertRawLatexToTemplate(rawLatex: string): {
   templateContent: string;
-  extractedData: Partial<ResumeData>;
+  extractedData: { personal?: Partial<ResumePersonalInfo> };
 } {
   // If the uploaded file is already a parameterized Vitae template with {{...}}
   if (/\{\{([a-zA-Z0-9_]+)\}\}/.test(rawLatex)) {
@@ -668,8 +756,7 @@ export function convertRawLatexToTemplate(rawLatex: string): {
   let template = rawLatex;
   const extractedPersonal: Partial<ResumePersonalInfo> = {};
 
-  // 1. Extract and parameterize Name
-  // Common patterns: \author{Name}, \name{Name}, {\Huge \scshape Name}, {\huge \textbf{Name}}, {\LARGE \textbf{Name}}
+  // 1. Name: \author{Name}, \name{Name}, {\Huge \scshape Name}, {\huge \textbf{Name}}, ...
   const namePatterns = [
     /\\author\{([^}]+)\}/,
     /\\name\{([^}]+)\}/,
@@ -686,55 +773,54 @@ export function convertRawLatexToTemplate(rawLatex: string): {
     if (match && match[1]?.trim()) {
       const rawName = match[1].trim();
       extractedPersonal.name = rawName;
-      // Replace the matched occurrence with {{name}}
-      template = template.replace(match[0], match[0].replace(rawName, "{{name}}"));
+      const replaced = match[0].replace(rawName, "{{name}}");
+      template = template.replace(match[0], () => replaced);
       break;
     }
   }
 
-  // 2. Extract and parameterize Email
-  const emailMatch = /(?:\\href\{mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\}\{[^}]*\}|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}))/.exec(template);
+  // 2. Email (every occurrence, so both \href{mailto:x}{x} parts are parameterized)
+  const emailMatch = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.exec(template);
   if (emailMatch) {
-    const email = emailMatch[1] || emailMatch[2];
-    extractedPersonal.email = email;
-    if (emailMatch[0].startsWith("\\href{mailto:")) {
-      template = template.replace(emailMatch[0], "\\href{mailto:{{email}}}{{{email}}}");
-    } else {
-      template = template.replace(email, "{{email}}");
-    }
+    extractedPersonal.email = emailMatch[0];
+    template = template.split(emailMatch[0]).join("{{email}}");
   }
 
-  // 3. Extract and parameterize Phone
-  const phoneMatch = /(?:\+?(\d{1,3})[-.\s]?)?\(?(\d{3})\)?[-.\s]?(\d{3})[-.\s]?(\d{4})/.exec(template);
+  // 3. Phone
+  const phoneMatch = /(?<![\d.])(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?![\d.])/.exec(template);
   if (phoneMatch) {
     const rawPhone = phoneMatch[0].trim();
     extractedPersonal.phone = rawPhone;
-    template = template.replace(rawPhone, "{{phone}}");
+    template = template.split(rawPhone).join("{{phone}}");
   }
 
-  // 4. Extract and parameterize GitHub / LinkedIn
-  const githubMatch = /(?:https?:\/\/)?github\.com\/([a-zA-Z0-9_-]+)/.exec(template);
-  if (githubMatch) {
-    extractedPersonal.github = `github.com/${githubMatch[1]}`;
-    template = template.replace(githubMatch[0], "github.com/{{github}}");
-  }
-
-  const linkedinMatch = /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/([a-zA-Z0-9_-]+)/.exec(template);
-  if (linkedinMatch) {
-    extractedPersonal.linkedin = `linkedin.com/in/${linkedinMatch[1]}`;
-    template = template.replace(linkedinMatch[0], "linkedin.com/in/{{linkedin}}");
-  }
+  // 4. GitHub / LinkedIn profile URLs. Stored as "github.com/user"; a scheme in
+  // the source becomes https://{{github}}, which the URL escaping normalizes.
+  const parameterizeProfile = (
+    host: string,
+    pathPrefix: string,
+    key: "github" | "linkedin"
+  ) => {
+    const pattern = new RegExp(
+      `(https?:\\/\\/)?(?:www\\.)?${escapeRegExp(host)}\\/${escapeRegExp(pathPrefix)}([a-zA-Z0-9_-]+)\\/?(?![a-zA-Z0-9_-])`
+    );
+    const match = pattern.exec(template);
+    if (!match) return;
+    const handle = match[2];
+    extractedPersonal[key] = `${host}/${pathPrefix}${handle}`;
+    const everyOccurrence = new RegExp(
+      `(https?:\\/\\/)?(?:www\\.)?${escapeRegExp(host)}\\/${escapeRegExp(pathPrefix)}${escapeRegExp(handle)}\\/?(?![a-zA-Z0-9_-])`,
+      "g"
+    );
+    template = template.replace(everyOccurrence, (_m: string, proto?: string) =>
+      proto ? `https://{{${key}}}` : `{{${key}}}`
+    );
+  };
+  parameterizeProfile("github.com", "", "github");
+  parameterizeProfile("linkedin.com", "in/", "linkedin");
 
   return {
     templateContent: template,
-    extractedData: {
-      personal: {
-        name: extractedPersonal.name || "Alex Morgan",
-        email: extractedPersonal.email || "",
-        phone: extractedPersonal.phone || "",
-        github: extractedPersonal.github || "",
-        linkedin: extractedPersonal.linkedin || "",
-      },
-    },
+    extractedData: Object.keys(extractedPersonal).length > 0 ? { personal: extractedPersonal } : {},
   };
 }

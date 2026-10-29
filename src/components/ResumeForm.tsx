@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import {
   ResumeData,
   ResumeExperienceItem,
@@ -8,6 +8,7 @@ import {
   ResumeCustomSection,
   ExtractedTemplateField,
 } from "../types";
+import { createId } from "../utils/templateEngine";
 import {
   IconUser,
   IconBriefcase,
@@ -25,6 +26,7 @@ import {
   IconCheck,
   IconX,
   IconPalette,
+  IconCode,
 } from "./Icons";
 
 export type ResumeSectionId =
@@ -42,6 +44,10 @@ interface ResumeFormProps {
   customFields?: ExtractedTemplateField[];
   templateName?: string;
   onChangeTemplateClick?: () => void;
+  /** True when the LaTeX source was edited by hand; the form is then read-only. */
+  locked?: boolean;
+  onRegenerateFromForm?: () => void;
+  onOpenSource?: () => void;
 }
 
 type ContactFieldKey =
@@ -52,7 +58,7 @@ type ContactFieldKey =
   | "linkedin"
   | "github";
 
-const DEFAULT_CONTACT_FIELD_ORDER: ContactFieldKey[] = [
+const CONTACT_FIELD_ORDER: ContactFieldKey[] = [
   "email",
   "phone",
   "location",
@@ -70,15 +76,30 @@ const CONTACT_FIELD_LABELS: Record<ContactFieldKey, string> = {
   github: "GitHub",
 };
 
+/** A labelled input: ties the <label> to its control so clicks and screen readers work. */
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactElement }) {
+  const id = useId();
+  return (
+    <div className="form-group">
+      <label htmlFor={id}>{label}</label>
+      {React.cloneElement(children, { id })}
+    </div>
+  );
+}
+
 export const ResumeForm: React.FC<ResumeFormProps> = ({
   data,
   onChange,
   customFields = [],
   templateName,
   onChangeTemplateClick,
+  locked = false,
+  onRegenerateFromForm,
+  onOpenSource,
 }) => {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [activeSection, setActiveSection] = useState<ResumeSectionId>("all");
+  const formId = useId();
 
   const hasCustom =
     customFields.length > 0 || (data.customSections && data.customSections.length > 0);
@@ -161,36 +182,6 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     });
   };
 
-  // Contact fields reordering within Personal Info
-  const effectiveContactFieldOrder: ContactFieldKey[] = (() => {
-    if (!data.personalFieldOrder || !Array.isArray(data.personalFieldOrder)) {
-      return DEFAULT_CONTACT_FIELD_ORDER;
-    }
-    const filtered = data.personalFieldOrder.filter((f) =>
-      DEFAULT_CONTACT_FIELD_ORDER.includes(f as any)
-    ) as ContactFieldKey[];
-    for (const f of DEFAULT_CONTACT_FIELD_ORDER) {
-      if (!filtered.includes(f)) {
-        filtered.push(f);
-      }
-    }
-    return filtered;
-  })();
-
-  const handleMoveContactField = (contactIdx: number, delta: -1 | 1) => {
-    const newIdx = contactIdx + delta;
-    if (newIdx < 0 || newIdx >= effectiveContactFieldOrder.length) return;
-    const newContactOrder = [...effectiveContactFieldOrder];
-    const [moved] = newContactOrder.splice(contactIdx, 1);
-    newContactOrder.splice(newIdx, 0, moved);
-
-    const fullOrder: string[] = ["name", "title", ...newContactOrder, "summary"];
-    onChange({
-      ...data,
-      personalFieldOrder: fullOrder,
-    });
-  };
-
   const handlePersonalChange = (field: keyof ResumeData["personal"], value: string) => {
     onChange({
       ...data,
@@ -215,7 +206,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
   const handleAddExperience = () => {
     const newItem: ResumeExperienceItem = {
-      id: "exp-" + Date.now(),
+      id: createId("exp"),
       role: "",
       company: "",
       location: "",
@@ -238,7 +229,15 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     });
   };
 
+  /** Whole entries go only after confirmation when they hold any text. */
+  const confirmRemove = (what: string, hasContent: boolean) =>
+    !hasContent || confirm(`Remove this ${what}? This can't be undone.`);
+
   const handleRemoveExperience = (id: string) => {
+    const item = data.experience.find((e) => e.id === id);
+    const hasContent =
+      !!item && [item.role, item.company, item.location, item.startDate, ...item.bullets].some((v) => v?.trim());
+    if (!confirmRemove("experience entry", hasContent)) return;
     onChange({
       ...data,
       experience: data.experience.filter((item) => item.id !== id),
@@ -309,7 +308,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
   const handleAddEducation = () => {
     const newItem: ResumeEducationItem = {
-      id: "edu-" + Date.now(),
+      id: createId("edu"),
       degree: "",
       institution: "",
       location: "",
@@ -333,6 +332,10 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   const handleRemoveEducation = (id: string) => {
+    const item = data.education.find((e) => e.id === id);
+    const hasContent =
+      !!item && [item.degree, item.institution, item.location, item.details].some((v) => v?.trim());
+    if (!confirmRemove("education entry", hasContent)) return;
     onChange({
       ...data,
       education: data.education.filter((item) => item.id !== id),
@@ -354,7 +357,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
   const handleAddProject = () => {
     const newItem: ResumeProjectItem = {
-      id: "proj-" + Date.now(),
+      id: createId("proj"),
       name: "",
       technologies: "",
       link: "",
@@ -376,6 +379,10 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   const handleRemoveProject = (id: string) => {
+    const item = data.projects.find((p) => p.id === id);
+    const hasContent =
+      !!item && [item.name, item.technologies, item.link, ...item.bullets].some((v) => v?.trim());
+    if (!confirmRemove("project", hasContent)) return;
     onChange({
       ...data,
       projects: data.projects.filter((item) => item.id !== id),
@@ -446,7 +453,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
   const handleAddSkill = () => {
     const newItem: ResumeSkillItem = {
-      id: "skill-" + Date.now(),
+      id: createId("skill"),
       category: "",
       skills: "",
     };
@@ -466,6 +473,9 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   const handleRemoveSkill = (id: string) => {
+    const item = data.skills.find((sk) => sk.id === id);
+    const hasContent = !!item && [item.category, item.skills].some((v) => v?.trim());
+    if (!confirmRemove("skill category", hasContent)) return;
     onChange({
       ...data,
       skills: data.skills.filter((item) => item.id !== id),
@@ -488,7 +498,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
 
   const handleAddCustomSection = () => {
     const newItem: ResumeCustomSection = {
-      id: "sec-" + Date.now(),
+      id: createId("sec"),
       title: "Certifications & Awards",
       content: "",
       bullets: [""],
@@ -509,11 +519,45 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
   };
 
   const handleRemoveCustomSection = (id: string) => {
+    const item = (data.customSections || []).find((c) => c.id === id);
+    const hasContent =
+      !!item && [item.title, item.content, ...(item.bullets || [])].some((v) => v?.trim());
+    if (!confirmRemove("custom section", hasContent)) return;
     onChange({
       ...data,
       customSections: (data.customSections || []).filter((item) => item.id !== id),
     });
   };
+
+  const updateCustomSectionBullets = (secId: string, update: (bullets: string[]) => string[]) => {
+    onChange({
+      ...data,
+      customSections: (data.customSections || []).map((item) =>
+        item.id === secId ? { ...item, bullets: update(item.bullets || []) } : item
+      ),
+    });
+  };
+
+  const handleAddCustomBullet = (secId: string) =>
+    updateCustomSectionBullets(secId, (bullets) => [...bullets, ""]);
+
+  const handleUpdateCustomBullet = (secId: string, bulletIndex: number, text: string) =>
+    updateCustomSectionBullets(secId, (bullets) =>
+      bullets.map((b, idx) => (idx === bulletIndex ? text : b))
+    );
+
+  const handleRemoveCustomBullet = (secId: string, bulletIndex: number) =>
+    updateCustomSectionBullets(secId, (bullets) => bullets.filter((_, idx) => idx !== bulletIndex));
+
+  const handleMoveCustomBullet = (secId: string, bulletIndex: number, delta: -1 | 1) =>
+    updateCustomSectionBullets(secId, (bullets) => {
+      const newIdx = bulletIndex + delta;
+      if (newIdx < 0 || newIdx >= bullets.length) return bullets;
+      const next = [...bullets];
+      const [moved] = next.splice(bulletIndex, 1);
+      next.splice(newIdx, 0, moved);
+      return next;
+    });
 
   const handleCustomVariableChange = (key: string, value: string) => {
     onChange({
@@ -604,6 +648,20 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
     secIdx: number
   ) => {
     const isCollapsed = collapsedSections[sectionKey] && activeSection === "all";
+    const sectionHeading = (
+      <>
+        <span className="icon" aria-hidden="true">
+          {React.createElement(SECTION_METADATA[sectionKey].icon, { size: 16 })}
+        </span>
+        <span>
+          {SECTION_METADATA[sectionKey].label}
+          {sectionKey === "experience" && ` (${data.experience.length})`}
+          {sectionKey === "education" && ` (${data.education.length})`}
+          {sectionKey === "projects" && ` (${data.projects.length})`}
+          {sectionKey === "skills" && ` (${data.skills.length})`}
+        </span>
+      </>
+    );
 
     return (
       <div
@@ -614,27 +672,25 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
         <div
           className={`form-card-header ${activeSection !== "all" ? "no-collapse" : ""}`}
           onClick={() => toggleSection(sectionKey)}
-          role={activeSection === "all" ? "button" : undefined}
-          tabIndex={activeSection === "all" ? 0 : undefined}
-          onKeyDown={(e) => {
-            if (activeSection === "all" && (e.key === "Enter" || e.key === " ")) {
-              e.preventDefault();
-              toggleSection(sectionKey);
-            }
-          }}
         >
-          <div className="header-title">
-            <span className="icon">
-              {React.createElement(SECTION_METADATA[sectionKey].icon, { size: 16 })}
-            </span>
-            <h3>
-              {SECTION_METADATA[sectionKey].label}
-              {sectionKey === "experience" && ` (${data.experience.length})`}
-              {sectionKey === "education" && ` (${data.education.length})`}
-              {sectionKey === "projects" && ` (${data.projects.length})`}
-              {sectionKey === "skills" && ` (${data.skills.length})`}
-            </h3>
-          </div>
+          <h2 className="header-title">
+            {activeSection === "all" ? (
+              <button
+                type="button"
+                className="header-toggle"
+                aria-expanded={!isCollapsed}
+                aria-controls={`${formId}-${sectionKey}-body`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSection(sectionKey);
+                }}
+              >
+                {sectionHeading}
+              </button>
+            ) : (
+              <span className="header-toggle">{sectionHeading}</span>
+            )}
+          </h2>
 
           <div className="header-actions">
             {activeSection === "all" && (
@@ -666,7 +722,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
             )}
 
             {activeSection === "all" && (
-              <span className="toggle-indicator">
+              <span className="toggle-indicator" aria-hidden="true">
                 {isCollapsed ? (
                   <IconChevronDown size={14} />
                 ) : (
@@ -678,13 +734,12 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
         </div>
 
         {(!isCollapsed || (activeSection as string) === sectionKey) && (
-          <div className="form-card-body">
+          <div className="form-card-body" id={`${formId}-${sectionKey}-body`}>
             {/* PERSONAL INFO CARD BODY */}
             {sectionKey === "personal" && (
               <>
                 <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Full Name *</label>
+                  <Field label="Full Name *">
                     <input
                       type="text"
                       placeholder="e.g. Alex Morgan"
@@ -692,55 +747,33 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       onChange={(e) => handlePersonalChange("name", e.target.value)}
                       data-testid="input-personal-name"
                     />
-                  </div>
-                  <div className="form-group">
-                    <label>Job Title / Headline</label>
+                  </Field>
+                  <Field label="Job Title / Headline">
                     <input
                       type="text"
                       placeholder="e.g. Senior Software Engineer"
                       value={data.personal.title || ""}
                       onChange={(e) => handlePersonalChange("title", e.target.value)}
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 <div className="form-row-3">
-                  {effectiveContactFieldOrder.map((fieldKey, cIdx) => (
+                  {CONTACT_FIELD_ORDER.map((fieldKey) => (
                     <div
                       key={fieldKey}
                       className="form-group"
                       data-testid={`personal-field-${fieldKey}`}
                     >
-                      <div className="field-header">
-                        <label>{CONTACT_FIELD_LABELS[fieldKey]}</label>
-                        <div className="field-reorder-actions">
-                          <button
-                            type="button"
-                            className="btn-field-reorder"
-                            disabled={cIdx === 0}
-                            onClick={() => handleMoveContactField(cIdx, -1)}
-                            data-testid={`btn-move-personal-${fieldKey}-up`}
-                            title={`Move ${CONTACT_FIELD_LABELS[fieldKey]} earlier`}
-                          >
-                            <IconChevronUp size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-field-reorder"
-                            disabled={cIdx === effectiveContactFieldOrder.length - 1}
-                            onClick={() => handleMoveContactField(cIdx, 1)}
-                            data-testid={`btn-move-personal-${fieldKey}-down`}
-                            title={`Move ${CONTACT_FIELD_LABELS[fieldKey]} later`}
-                          >
-                            <IconChevronDown size={12} />
-                          </button>
-                        </div>
-                      </div>
+                      <label htmlFor={`${formId}-personal-${fieldKey}`}>
+                        {CONTACT_FIELD_LABELS[fieldKey]}
+                      </label>
 
                       {fieldKey === "email" && (
                         <input
                           type="email"
                           placeholder="alex@example.com"
+                          id={`${formId}-personal-email`}
                           value={data.personal.email || ""}
                           onChange={(e) => handlePersonalChange("email", e.target.value)}
                         />
@@ -749,6 +782,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         <input
                           type="tel"
                           placeholder="+1 (555) 019-2834"
+                          id={`${formId}-personal-phone`}
                           value={data.personal.phone || ""}
                           onChange={(e) => handlePersonalChange("phone", e.target.value)}
                         />
@@ -757,6 +791,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         <input
                           type="text"
                           placeholder="San Francisco, CA"
+                          id={`${formId}-personal-location`}
                           value={data.personal.location || ""}
                           onChange={(e) => handlePersonalChange("location", e.target.value)}
                         />
@@ -765,6 +800,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         <input
                           type="text"
                           placeholder="https://alexmorgan.dev"
+                          id={`${formId}-personal-website`}
                           value={data.personal.website || ""}
                           onChange={(e) => handlePersonalChange("website", e.target.value)}
                         />
@@ -773,6 +809,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         <input
                           type="text"
                           placeholder="linkedin.com/in/alexmorgan"
+                          id={`${formId}-personal-linkedin`}
                           value={data.personal.linkedin || ""}
                           onChange={(e) => handlePersonalChange("linkedin", e.target.value)}
                         />
@@ -781,6 +818,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         <input
                           type="text"
                           placeholder="github.com/alexmorgan"
+                          id={`${formId}-personal-github`}
                           value={data.personal.github || ""}
                           onChange={(e) => handlePersonalChange("github", e.target.value)}
                         />
@@ -789,15 +827,14 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                   ))}
                 </div>
 
-                <div className="form-group">
-                  <label>Professional Summary</label>
+                <Field label="Professional Summary">
                   <textarea
                     rows={3}
                     placeholder="Brief summary of your professional background and core strengths..."
                     value={data.personal.summary || ""}
                     onChange={(e) => handlePersonalChange("summary", e.target.value)}
                   />
-                </div>
+                </Field>
                 {renderTraversalFooter("personal")}
               </>
             )}
@@ -813,7 +850,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                   >
                     <div className="entry-header">
                       <div className="entry-title-group">
-                        <h4>{exp.role || exp.company || `Role #${expIdx + 1}`}</h4>
+                        <h3>{exp.role || exp.company || `Role #${expIdx + 1}`}</h3>
                         <span className="entry-index-badge">#{expIdx + 1}</span>
                       </div>
                       <div className="entry-actions">
@@ -851,8 +888,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     </div>
 
                     <div className="form-row-2">
-                      <div className="form-group">
-                        <label>Role / Position</label>
+                      <Field label="Role / Position">
                         <input
                           type="text"
                           placeholder="e.g. Senior Software Engineer"
@@ -861,9 +897,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateExperience(exp.id, "role", e.target.value)
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Company / Organization</label>
+                      </Field>
+                      <Field label="Company / Organization">
                         <input
                           type="text"
                           placeholder="e.g. Acme Corp"
@@ -872,12 +907,11 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateExperience(exp.id, "company", e.target.value)
                           }
                         />
-                      </div>
+                      </Field>
                     </div>
 
                     <div className="form-row-3">
-                      <div className="form-group">
-                        <label>Location</label>
+                      <Field label="Location">
                         <input
                           type="text"
                           placeholder="e.g. San Francisco, CA"
@@ -886,9 +920,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateExperience(exp.id, "location", e.target.value)
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Start Date</label>
+                      </Field>
+                      <Field label="Start Date">
                         <input
                           type="text"
                           placeholder="e.g. Jan 2022"
@@ -901,9 +934,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             )
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>End Date</label>
+                      </Field>
+                      <Field label="End Date">
                         <input
                           type="text"
                           placeholder="e.g. Present"
@@ -916,7 +948,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             )
                           }
                         />
-                      </div>
+                      </Field>
                     </div>
 
                     <div className="bullets-section">
@@ -925,6 +957,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                           <span className="bullet-dot">•</span>
                           <input
                             type="text"
+                            aria-label={`Bullet ${bIdx + 1}`}
                             placeholder="Describe key responsibilities or quantifiable results..."
                             value={bullet}
                             onChange={(e) =>
@@ -1001,7 +1034,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                   >
                     <div className="entry-header">
                       <div className="entry-title-group">
-                        <h4>{edu.degree || edu.institution || `Education #${eduIdx + 1}`}</h4>
+                        <h3>{edu.degree || edu.institution || `Education #${eduIdx + 1}`}</h3>
                         <span className="entry-index-badge">#{eduIdx + 1}</span>
                       </div>
                       <div className="entry-actions">
@@ -1039,8 +1072,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     </div>
 
                     <div className="form-row-2">
-                      <div className="form-group">
-                        <label>Degree / Certificate</label>
+                      <Field label="Degree / Certificate">
                         <input
                           type="text"
                           placeholder="e.g. B.S. in Computer Science"
@@ -1049,9 +1081,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateEducation(edu.id, "degree", e.target.value)
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Institution / University</label>
+                      </Field>
+                      <Field label="Institution / University">
                         <input
                           type="text"
                           placeholder="e.g. University of California, Berkeley"
@@ -1060,12 +1091,11 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateEducation(edu.id, "institution", e.target.value)
                           }
                         />
-                      </div>
+                      </Field>
                     </div>
 
                     <div className="form-row-3">
-                      <div className="form-group">
-                        <label>Location</label>
+                      <Field label="Location">
                         <input
                           type="text"
                           placeholder="e.g. Berkeley, CA"
@@ -1074,9 +1104,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateEducation(edu.id, "location", e.target.value)
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Start Date</label>
+                      </Field>
+                      <Field label="Start Date">
                         <input
                           type="text"
                           placeholder="e.g. 2017"
@@ -1089,9 +1118,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             )
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>End Date</label>
+                      </Field>
+                      <Field label="End Date">
                         <input
                           type="text"
                           placeholder="e.g. 2021"
@@ -1104,11 +1132,10 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             )
                           }
                         />
-                      </div>
+                      </Field>
                     </div>
 
-                    <div className="form-group">
-                      <label>Honors, GPA or Coursework</label>
+                    <Field label="Honors, GPA or Coursework">
                       <input
                         type="text"
                         placeholder="e.g. Magna Cum Laude, GPA: 3.9/4.0, Algorithms"
@@ -1117,7 +1144,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                           handleUpdateEducation(edu.id, "details", e.target.value)
                         }
                       />
-                    </div>
+                    </Field>
                   </div>
                 ))}
 
@@ -1146,7 +1173,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                   >
                     <div className="entry-header">
                       <div className="entry-title-group">
-                        <h4>{proj.name || `Project #${pIdx + 1}`}</h4>
+                        <h3>{proj.name || `Project #${pIdx + 1}`}</h3>
                         <span className="entry-index-badge">#{pIdx + 1}</span>
                       </div>
                       <div className="entry-actions">
@@ -1184,8 +1211,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     </div>
 
                     <div className="form-row-3">
-                      <div className="form-group">
-                        <label>Project Name</label>
+                      <Field label="Project Name">
                         <input
                           type="text"
                           placeholder="e.g. Distributed Key-Value Store"
@@ -1194,9 +1220,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateProject(proj.id, "name", e.target.value)
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Technologies Used</label>
+                      </Field>
+                      <Field label="Technologies Used">
                         <input
                           type="text"
                           placeholder="e.g. Rust, Raft, gRPC, Tokio"
@@ -1209,9 +1234,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             )
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Project Link / Demo URL</label>
+                      </Field>
+                      <Field label="Project Link / Demo URL">
                         <input
                           type="text"
                           placeholder="https://github.com/alex/project"
@@ -1220,16 +1244,17 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateProject(proj.id, "link", e.target.value)
                           }
                         />
-                      </div>
+                      </Field>
                     </div>
 
                     <div className="bullets-section">
-                      <label className="bullets-label">Project Highlights</label>
+                      <span className="bullets-label">Project Highlights</span>
                       {proj.bullets.map((bullet, bIdx) => (
                         <div key={bIdx} className="bullet-row">
                           <span className="bullet-dot">•</span>
                           <input
                             type="text"
+                            aria-label={`Project highlight ${bIdx + 1}`}
                             placeholder="Bullet describing implementation or impact..."
                             value={bullet}
                             onChange={(e) =>
@@ -1307,7 +1332,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                   >
                     <div className="entry-header">
                       <div className="entry-title-group">
-                        <h4>{skill.category || `Category #${sIdx + 1}`}</h4>
+                        <h3>{skill.category || `Category #${sIdx + 1}`}</h3>
                         <span className="entry-index-badge">#{sIdx + 1}</span>
                       </div>
                       <div className="entry-actions">
@@ -1345,8 +1370,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                     </div>
 
                     <div className="form-row-2">
-                      <div className="form-group">
-                        <label>Category</label>
+                      <Field label="Category">
                         <input
                           type="text"
                           placeholder="e.g. Languages, Frameworks, Cloud"
@@ -1355,9 +1379,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateSkill(skill.id, "category", e.target.value)
                           }
                         />
-                      </div>
-                      <div className="form-group">
-                        <label>Skills / Items (comma separated)</label>
+                      </Field>
+                      <Field label="Skills / Items (comma separated)">
                         <input
                           type="text"
                           placeholder="e.g. Rust, TypeScript, Python, Docker"
@@ -1366,7 +1389,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                             handleUpdateSkill(skill.id, "skills", e.target.value)
                           }
                         />
-                      </div>
+                      </Field>
                     </div>
                   </div>
                 ))}
@@ -1390,9 +1413,10 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               <>
                 {customFields.map((field) => (
                   <div key={field.key} className="form-group">
-                    <label>{field.label}</label>
+                    <label htmlFor={`${formId}-custom-${field.key}`}>{field.label}</label>
                     {field.type === "textarea" ? (
                       <textarea
+                        id={`${formId}-custom-${field.key}`}
                         rows={3}
                         value={data.customVariables?.[field.key] || ""}
                         onChange={(e) =>
@@ -1401,6 +1425,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                       />
                     ) : (
                       <input
+                        id={`${formId}-custom-${field.key}`}
                         type="text"
                         value={data.customVariables?.[field.key] || ""}
                         onChange={(e) =>
@@ -1415,7 +1440,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                   <div key={sec.id} className="entry-card">
                     <div className="entry-header">
                       <div className="entry-title-group">
-                        <h4>{sec.title || `Custom Section #${secIdx + 1}`}</h4>
+                        <h3>{sec.title || `Custom Section #${secIdx + 1}`}</h3>
                         <span className="entry-index-badge">#{secIdx + 1}</span>
                       </div>
                       <div className="entry-actions">
@@ -1453,8 +1478,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                         </button>
                       </div>
                     </div>
-                    <div className="form-group">
-                      <label>Section Title</label>
+                    <Field label="Section Title">
                       <input
                         type="text"
                         value={sec.title}
@@ -1462,9 +1486,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                           handleUpdateCustomSection(sec.id, "title", e.target.value)
                         }
                       />
-                    </div>
-                    <div className="form-group">
-                      <label>Content</label>
+                    </Field>
+                    <Field label="Content">
                       <textarea
                         rows={2}
                         value={sec.content || ""}
@@ -1472,6 +1495,62 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
                           handleUpdateCustomSection(sec.id, "content", e.target.value)
                         }
                       />
+                    </Field>
+                    <div className="bullets-section">
+                      <span className="bullets-label">Bullet points</span>
+                      {(sec.bullets || []).map((bullet, bIdx) => (
+                        <div key={bIdx} className="bullet-row">
+                          <span className="bullet-dot" aria-hidden="true">•</span>
+                          <input
+                            type="text"
+                            aria-label={`${sec.title || "Custom section"} bullet ${bIdx + 1}`}
+                            placeholder="e.g. AWS Certified Solutions Architect (2025)"
+                            value={bullet}
+                            onChange={(e) => handleUpdateCustomBullet(sec.id, bIdx, e.target.value)}
+                          />
+                          <div className="bullet-actions">
+                            <button
+                              type="button"
+                              className="btn-bullet-reorder"
+                              disabled={bIdx === 0}
+                              onClick={() => handleMoveCustomBullet(sec.id, bIdx, -1)}
+                              title="Move bullet up"
+                              aria-label="Move bullet up"
+                            >
+                              <IconChevronUp size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-bullet-reorder"
+                              disabled={bIdx === (sec.bullets || []).length - 1}
+                              onClick={() => handleMoveCustomBullet(sec.id, bIdx, 1)}
+                              title="Move bullet down"
+                              aria-label="Move bullet down"
+                            >
+                              <IconChevronDown size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-bullet-remove"
+                              onClick={() => handleRemoveCustomBullet(sec.id, bIdx)}
+                              data-testid={`btn-remove-custom-bullet-${secIdx}-${bIdx}`}
+                              title="Remove bullet"
+                              aria-label="Remove bullet"
+                            >
+                              <IconX size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="btn-add-bullet"
+                        onClick={() => handleAddCustomBullet(sec.id)}
+                        data-testid={`btn-add-custom-bullet-${secIdx}`}
+                      >
+                        <IconPlus size={13} />
+                        <span>Add Bullet</span>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1519,8 +1598,8 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
       <div className="section-nav-container">
         <div
           className="section-tabs-bar"
-          role="tablist"
-          aria-label="Resume Sections"
+          role="group"
+          aria-label="Resume sections"
           onWheel={(e) => {
             if (e.deltaY !== 0) {
               e.currentTarget.scrollLeft += e.deltaY;
@@ -1529,8 +1608,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
         >
           <button
             type="button"
-            role="tab"
-            aria-selected={activeSection === "all"}
+            aria-pressed={activeSection === "all"}
             className={`section-tab-btn ${activeSection === "all" ? "active" : ""}`}
             onClick={() => handleTabChange("all")}
             data-testid="section-tab-all"
@@ -1558,14 +1636,13 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
               <button
                 key={secKey}
                 type="button"
-                role="tab"
-                aria-selected={activeSection === secKey}
+                aria-pressed={activeSection === secKey}
                 className={`section-tab-btn ${activeSection === secKey ? "active" : ""}`}
                 onClick={() => handleTabChange(secKey)}
                 data-testid={`section-tab-${secKey}`}
                 title={meta.label}
               >
-                <span className="tab-icon">
+                <span className="tab-icon" aria-hidden="true">
                   <Icon size={14} />
                 </span>
                 <span className="tab-label">{meta.label}</span>
@@ -1578,15 +1655,46 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({
         </div>
       </div>
 
-      {/* RENDER SECTIONS */}
-      {activeSection === "all" ? (
-        effectiveSectionOrder.map((secKey, idx) => renderSectionCard(secKey, idx))
-      ) : (
-        renderSectionCard(
-          activeSection,
-          effectiveSectionOrder.indexOf(activeSection)
-        )
+      {locked && (
+        <div className="form-locked-banner" role="status" data-testid="form-locked-banner">
+          <p>
+            <strong>The form is paused.</strong> This document's LaTeX source was edited by
+            hand, so form changes would overwrite it. Keep editing the source, or regenerate
+            the source from the form (this discards the manual edits).
+          </p>
+          <div className="form-locked-actions">
+            {onOpenSource && (
+              <button type="button" className="btn-secondary" onClick={onOpenSource}>
+                <IconCode size={14} />
+                <span>Edit LaTeX Source</span>
+              </button>
+            )}
+            {onRegenerateFromForm && (
+              <button
+                type="button"
+                className="btn-danger-outline"
+                onClick={onRegenerateFromForm}
+                data-testid="btn-regenerate-from-form"
+              >
+                Regenerate from form
+              </button>
+            )}
+          </div>
+        </div>
       )}
+
+      {/* RENDER SECTIONS */}
+      <fieldset className="form-sections" disabled={locked}>
+        <legend className="visually-hidden">Resume content</legend>
+        {activeSection === "all" ? (
+          effectiveSectionOrder.map((secKey, idx) => renderSectionCard(secKey, idx))
+        ) : (
+          renderSectionCard(
+            activeSection,
+            effectiveSectionOrder.indexOf(activeSection)
+          )
+        )}
+      </fieldset>
     </div>
   );
 };

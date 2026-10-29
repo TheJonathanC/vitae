@@ -27,7 +27,10 @@ function Sidebar({
   onToggleCollapse,
 }: SidebarProps) {
   return (
-    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+    <aside
+      className={`sidebar ${collapsed ? "collapsed" : ""}`}
+      aria-label="Documents"
+    >
       {!collapsed && (
         <>
           <div className="sidebar-header">
@@ -50,43 +53,43 @@ function Sidebar({
               <span>New</span>
             </button>
           </div>
-          <div className="document-list">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                className={`document-item ${
-                  currentDocument?.id === doc.id ? "active" : ""
-                }`}
-                onClick={() => onSelectDocument(doc.id)}
-              >
-                <div className="document-item-main">
-                  <IconFile size={14} className="document-icon" />
-                  <div className="document-info">
-                    <div className="document-title">{doc.title}</div>
-                    <div className="document-meta">
-                      {new Date(doc.updated_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  className="btn-delete"
-                  title="Delete document"
-                  aria-label="Delete document"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteDocument(doc.id);
-                  }}
-                >
-                  <IconTrash size={14} />
-                </button>
-              </div>
-            ))}
+          <ul className="document-list">
+            {documents.map((doc) => {
+              const isActive = currentDocument?.id === doc.id;
+              return (
+                <li key={doc.id} className={`document-item ${isActive ? "active" : ""}`}>
+                  <button
+                    type="button"
+                    className="document-item-main"
+                    onClick={() => onSelectDocument(doc.id)}
+                    aria-current={isActive ? "true" : undefined}
+                  >
+                    <IconFile size={14} className="document-icon" />
+                    <span className="document-info">
+                      <span className="document-title">{doc.title}</span>
+                      <span className="document-meta">
+                        {new Date(doc.updated_at).toLocaleDateString()}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-delete"
+                    title="Delete document"
+                    aria-label={`Delete ${doc.title}`}
+                    onClick={() => onDeleteDocument(doc.id)}
+                  >
+                    <IconTrash size={14} />
+                  </button>
+                </li>
+              );
+            })}
             {documents.length === 0 && (
-              <div className="empty-state">
+              <li className="empty-state">
                 No documents yet. Create your first document!
-              </div>
+              </li>
             )}
-          </div>
+          </ul>
         </>
       )}
       {collapsed && (
@@ -99,7 +102,7 @@ function Sidebar({
           <IconChevronRight size={16} />
         </button>
       )}
-    </div>
+    </aside>
   );
 }
 

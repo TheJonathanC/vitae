@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import Editor from "./components/Editor";
 import Sidebar from "./components/Sidebar";
 import PDFViewer from "./components/PDFViewer";
 import SetupGuide from "./components/SetupGuide";
@@ -8,19 +7,25 @@ import UpdateChecker from "./components/UpdateChecker";
 import SettingsModal from "./components/SettingsModal";
 import ResumeForm from "./components/ResumeForm";
 import TemplateManager from "./components/TemplateManager";
+import NewDocumentDialog from "./components/NewDocumentDialog";
+import ErrorBoundary from "./components/ErrorBoundary";
 import {
   Document,
   LatexError,
   CompilationResult,
   Template,
   ResumeData,
+  ResumePersonalInfo,
 } from "./types";
 import { BUILTIN_TEMPLATES } from "./utils/templatePresets";
 import {
-  getDefaultResumeData,
+  getEmptyResumeData,
+  normalizeResumeData,
   renderTemplate,
   extractFieldsFromTemplate,
 } from "./utils/templateEngine";
+import { getStoredChannel } from "./utils/updates";
+import { isModalOpen } from "./hooks/useDialog";
 import {
   IconSplit,
   IconForm,
@@ -36,22 +41,51 @@ import {
 } from "./components/Icons";
 import "./App.css";
 
+// Monaco is large and only needed for the LaTeX Source tab.
+const Editor = lazy(() => import("./components/Editor"));
+
+interface PendingSave {
+  id: string;
+  content: string;
+  template_id?: string | null;
+  resume_data?: string | null;
+}
+
+/** The compiled PDF currently shown, tied to the document it belongs to. */
+interface PreviewState {
+  docId: string;
+  revision: number;
+  path: string;
+}
+
+const SAVE_DEBOUNCE_MS = 500;
+const SAVE_RETRY_MS = 3000;
+
+/** Content the backend gives documents created without a template. */
+const isPlaceholderContent = (content: string) =>
+  !content || content.includes("Start writing your document here");
+
+function readSplitRatio(): number {
+  const saved = Number.parseFloat(localStorage.getItem("vitae_split_ratio") ?? "");
+  return Number.isFinite(saved) ? Math.min(Math.max(saved, 20), 80) : 50;
+}
+
 function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentDocument, setCurrentDocument] = useState<Document | null>(null);
   const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showNewDocument, setShowNewDocument] = useState(false);
   const [editorMode, setEditorMode] = useState<"form" | "code">("form");
   const [viewMode, setViewMode] = useState<"split" | "editor" | "preview">("split");
 
   // Structured resume data for the active document
-  const [resumeData, setResumeData] = useState<ResumeData>(() =>
-    getDefaultResumeData("Alex Morgan")
-  );
+  const [resumeData, setResumeData] = useState<ResumeData>(getEmptyResumeData);
 
-  const [pdfPath, setPdfPath] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [latexInstalled, setLatexInstalled] = useState(true);
   const [latexErrors, setLatexErrors] = useState<LatexError[]>([]);
@@ -60,27 +94,19 @@ function App() {
   });
   const [compilationLog, setCompilationLog] = useState<string>("");
   const [showLog, setShowLog] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [updateChannel, setUpdateChannel] = useState<string>(() => {
-    return localStorage.getItem("vitae_channel") || "beta";
-  });
+  const [updateChannel, setUpdateChannel] = useState<string>(getStoredChannel);
 
   // Draggable Split Pane State
-  const [splitRatio, setSplitRatio] = useState<number>(() => {
-    const saved = localStorage.getItem("vitae_split_ratio");
-    return saved ? Math.min(Math.max(parseFloat(saved), 20), 80) : 50;
-  });
+  const [splitRatio, setSplitRatio] = useState<number>(readSplitRatio);
+  const splitRatioRef = useRef(splitRatio);
+  splitRatioRef.current = splitRatio;
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<{
-    id: string;
-    content: string;
-    template_id?: string | null;
-    resume_data?: string | null;
-  } | null>(null);
+  const pendingSaveRef = useRef<PendingSave | null>(null);
 
   const isCompilingRef = useRef(false);
   const queuedCompileRef = useRef(false);
@@ -93,6 +119,8 @@ function App() {
 
   const latexInstalledRef = useRef(latexInstalled);
   latexInstalledRef.current = latexInstalled;
+
+  const isSourceDetached = resumeData.sourceEditedManually === true;
 
   // Active template calculation
   const activeTemplate = useMemo<Template>(() => {
@@ -108,69 +136,92 @@ function App() {
     return extractFieldsFromTemplate(activeTemplate.content);
   }, [activeTemplate.content]);
 
-  const flushSave = async (): Promise<{
-    id: string;
-    content: string;
-    template_id?: string | null;
-    resume_data?: string | null;
-  } | null> => {
+  const scheduleSave = (delay: number) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      flushSaveRef.current();
+    }, delay);
+  };
+
+  const flushSave = async (): Promise<PendingSave | null> => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
     }
-    if (pendingSaveRef.current) {
-      const { id, content, template_id, resume_data } = pendingSaveRef.current;
-      pendingSaveRef.current = null;
-      try {
-        await invoke("update_document_full", {
-          id,
-          content,
-          templateId: template_id || null,
-          resumeData: resume_data || null,
-        });
+    const pending = pendingSaveRef.current;
+    if (!pending) return null;
+    pendingSaveRef.current = null;
 
-        const now = new Date().toISOString();
-        if (currentDocRef.current && currentDocRef.current.id === id) {
-          currentDocRef.current = {
-            ...currentDocRef.current,
-            content,
-            template_id,
-            resume_data,
-            updated_at: now,
-          };
-        }
-        setDocuments((prev) =>
-          prev.map((d) =>
-            d.id === id
-              ? { ...d, content, template_id, resume_data, updated_at: now }
-              : d
-          )
-        );
-        setCurrentDocument((curr) =>
-          curr && curr.id === id
-            ? { ...curr, content, template_id, resume_data, updated_at: now }
-            : curr
-        );
-        return { id, content, template_id, resume_data };
-      } catch (err) {
-        // Fallback to update_document for backward compatibility
-        try {
-          await invoke("update_document", { id, content });
-          return { id, content, template_id, resume_data };
-        } catch (innerErr) {
-          setError(`Failed to save document: ${innerErr}`);
-        }
+    const { id, content, template_id, resume_data } = pending;
+    try {
+      await invoke("update_document_full", {
+        id,
+        content,
+        templateId: template_id || null,
+        resumeData: resume_data || null,
+      });
+    } catch (err) {
+      // Keep the edit queued (unless a newer one replaced it) and retry shortly.
+      if (!pendingSaveRef.current) {
+        pendingSaveRef.current = pending;
+        scheduleSave(SAVE_RETRY_MS);
       }
+      setError(`Failed to save document: ${err}`);
+      return null;
     }
-    return null;
+
+    const now = new Date().toISOString();
+    if (currentDocRef.current && currentDocRef.current.id === id) {
+      currentDocRef.current = {
+        ...currentDocRef.current,
+        content,
+        template_id,
+        resume_data,
+        updated_at: now,
+      };
+    }
+    setDocuments((prev) =>
+      prev.map((d) =>
+        d.id === id ? { ...d, content, template_id, resume_data, updated_at: now } : d
+      )
+    );
+    setCurrentDocument((curr) =>
+      curr && curr.id === id
+        ? { ...curr, content, template_id, resume_data, updated_at: now }
+        : curr
+    );
+    return pending;
   };
+  const flushSaveRef = useRef(flushSave);
+  flushSaveRef.current = flushSave;
 
   useEffect(() => {
     checkLatexInstallation();
     loadTemplates();
     loadDocuments();
 
+    // Window close doesn't unmount React, so flush the debounced save explicitly.
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    if ("__TAURI_METADATA__" in window) {
+      import("@tauri-apps/api/window")
+        .then(({ appWindow }) =>
+          appWindow.onCloseRequested(async () => {
+            await flushSaveRef.current();
+          })
+        )
+        .then((fn) => {
+          if (disposed) fn();
+          else unlisten = fn;
+        })
+        .catch((err) => console.warn("Could not register close handler:", err));
+    }
+
     return () => {
+      disposed = true;
+      unlisten?.();
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
@@ -198,42 +249,6 @@ function App() {
     }
   };
 
-  const syncDocumentResumeData = useCallback(
-    (doc: Document | null) => {
-      if (!doc) return;
-
-      if (doc.resume_data) {
-        try {
-          const parsed = JSON.parse(doc.resume_data);
-          setResumeData(parsed);
-          return;
-        } catch (e) {
-          console.error("Failed to parse resume_data JSON:", e);
-        }
-      }
-
-      // Initialize default data with document title
-      const initialData = getDefaultResumeData(doc.title || "Alex Morgan");
-      setResumeData(initialData);
-
-      // If document content is empty or generic, render template
-      if (!doc.content || doc.content.includes("Start writing your document here")) {
-        const tpl =
-          templates.find((t) => t.id === doc.template_id) ||
-          templates[0] ||
-          BUILTIN_TEMPLATES[0];
-        const rendered = renderTemplate(tpl.content, initialData);
-        updateDocumentStateAndQueueSave(
-          doc.id,
-          rendered,
-          tpl.id,
-          JSON.stringify(initialData)
-        );
-      }
-    },
-    [templates]
-  );
-
   const updateDocumentStateAndQueueSave = (
     docId: string,
     content: string,
@@ -248,7 +263,7 @@ function App() {
             template_id: templateId,
             resume_data: resumeDataString,
           }
-        : null
+        : prev
     );
 
     pendingSaveRef.current = {
@@ -257,17 +272,54 @@ function App() {
       template_id: templateId,
       resume_data: resumeDataString,
     };
+    scheduleSave(SAVE_DEBOUNCE_MS);
+  };
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+  /**
+   * Loads a document's form data. Documents whose LaTeX was written or edited
+   * by hand keep their source untouched: the form is locked and the editor
+   * opens on the LaTeX tab.
+   */
+  const syncDocumentResumeData = (doc: Document | null) => {
+    if (!doc) {
+      setResumeData(getEmptyResumeData());
+      return;
     }
-    saveTimeoutRef.current = setTimeout(() => {
-      flushSave();
-    }, 500);
+
+    if (doc.resume_data) {
+      try {
+        const data = normalizeResumeData(JSON.parse(doc.resume_data));
+        setResumeData(data);
+        if (data.sourceEditedManually) setEditorMode("code");
+        return;
+      } catch (e) {
+        console.error("Failed to parse resume_data JSON:", e);
+      }
+    }
+
+    if (isPlaceholderContent(doc.content)) {
+      const initialData = getEmptyResumeData();
+      setResumeData(initialData);
+      const tpl =
+        templates.find((t) => t.id === doc.template_id) || templates[0] || BUILTIN_TEMPLATES[0];
+      updateDocumentStateAndQueueSave(
+        doc.id,
+        renderTemplate(tpl.content, initialData),
+        tpl.id,
+        JSON.stringify(initialData)
+      );
+      return;
+    }
+
+    // Hand-written LaTeX with no (readable) form data.
+    setResumeData({ ...getEmptyResumeData(), sourceEditedManually: true });
+    setEditorMode("code");
   };
 
   const handleResumeDataChange = (newData: ResumeData) => {
     if (!currentDocument) return;
+    // The form is read-only while the source has manual edits.
+    if (isSourceDetached && newData.sourceEditedManually) return;
     setResumeData(newData);
 
     // Re-render LaTeX with the active template
@@ -280,33 +332,61 @@ function App() {
     );
   };
 
-  const handleSelectTemplate = (template: Template) => {
-    if (!currentDocument) return;
+  const handleRegenerateFromForm = () => {
+    if (
+      !confirm(
+        "Regenerate the LaTeX source from the form? Your manual edits to the LaTeX source will be lost."
+      )
+    ) {
+      return;
+    }
+    handleResumeDataChange({ ...resumeData, sourceEditedManually: undefined });
+  };
 
-    const rendered = renderTemplate(template.content, resumeData);
+  /**
+   * Applies a template (optionally one just imported, with contact details
+   * detected in it). Detected details only fill fields the user left empty.
+   */
+  const handleSelectTemplate = (
+    template: Template,
+    importedPersonal?: Partial<ResumePersonalInfo>
+  ) => {
+    if (!currentDocument) return;
+    if (
+      isSourceDetached &&
+      !confirm(
+        "Switching templates regenerates the LaTeX source from the form and discards your manual edits to the source. Continue?"
+      )
+    ) {
+      return;
+    }
+
+    let data: ResumeData = { ...resumeData, sourceEditedManually: undefined };
+    if (importedPersonal) {
+      const personal = { ...data.personal };
+      for (const [key, value] of Object.entries(importedPersonal)) {
+        const field = key as keyof ResumePersonalInfo;
+        if (typeof value === "string" && value && !personal[field]) {
+          personal[field] = value;
+        }
+      }
+      data = { ...data, personal };
+    }
+
+    // A freshly imported template isn't in `templates` until the reload finishes.
+    setTemplates((prev) => (prev.some((t) => t.id === template.id) ? prev : [...prev, template]));
+    setResumeData(data);
     updateDocumentStateAndQueueSave(
       currentDocument.id,
-      rendered,
+      renderTemplate(template.content, data),
       template.id,
-      JSON.stringify(resumeData)
+      JSON.stringify(data)
     );
 
-    // Auto trigger compile on template change if autoCompile or compiling
+    // Refresh the preview for the new template
     setTimeout(() => {
       compileLatex();
     }, 300);
-  };
-
-  const handleImportDataIntoResume = (extracted: Partial<ResumeData>) => {
-    if (!extracted.personal) return;
-    const merged: ResumeData = {
-      ...resumeData,
-      personal: {
-        ...resumeData.personal,
-        ...extracted.personal,
-      },
-    };
-    handleResumeDataChange(merged);
   };
 
   const compileLatex = useCallback(async () => {
@@ -323,7 +403,7 @@ function App() {
       contentToCompile = pendingSaveRef.current.content;
     }
 
-    const saved = await flushSave();
+    const saved = await flushSaveRef.current();
     if (saved && saved.id === doc.id) {
       contentToCompile = saved.content;
     }
@@ -345,13 +425,16 @@ function App() {
     setIsCompiling(true);
     setError(null);
     setCompilationLog("Starting compilation...\n");
-    // Preserve existing pdfPath so the preview does not blank out or flicker
+    // Preserve the existing preview so it does not blank out or flicker
 
     try {
       const result = await invoke<CompilationResult>("compile_latex", {
         id: doc.id,
         content: contentToCompile,
       });
+
+      // The user may have switched documents while pdflatex was running.
+      if (currentDocRef.current?.id !== doc.id) return;
 
       setLatexErrors(result.errors);
 
@@ -385,10 +468,9 @@ function App() {
       setCompilationLog(log);
 
       if (result.success && result.pdf_path) {
-        // Append unique timestamp query param so PDFViewer can reload smoothly without unmounting
-        setPdfPath(`${result.pdf_path}?t=${Date.now()}`);
+        setPreview({ docId: doc.id, revision: Date.now(), path: result.pdf_path });
         if (warnings.length > 0) {
-          setError(`Compiled with ${warnings.length} warning(s). Click "View Log" for details.`);
+          setError(`Compiled with ${warnings.length} warning(s). Click "Log" for details.`);
         }
       } else {
         const errorMsgs = errors
@@ -397,6 +479,7 @@ function App() {
         setError(`Compilation failed:\n${errorMsgs || "Unknown error"}`);
       }
     } catch (err) {
+      if (currentDocRef.current?.id !== doc.id) return;
       const errorMsg = `Compilation error: ${err}`;
       setError(errorMsg);
       setCompilationLog(`ERROR\n${errorMsg}`);
@@ -442,7 +525,7 @@ function App() {
     try {
       const docs = await invoke<Document[]>("get_all_documents");
       setDocuments(docs);
-      if (docs.length > 0 && !currentDocument) {
+      if (docs.length > 0 && !currentDocRef.current) {
         setCurrentDocument(docs[0]);
         syncDocumentResumeData(docs[0]);
       }
@@ -451,35 +534,29 @@ function App() {
     }
   };
 
-  const createNewDocument = async () => {
-    const title = prompt("Enter resume or document title:");
-    if (!title) return;
-
+  const createNewDocument = async (title: string) => {
+    setShowNewDocument(false);
     await flushSave();
 
     try {
       const defaultTemplate = templates[0] || BUILTIN_TEMPLATES[0];
-      const initialResumeData = getDefaultResumeData(title);
+      const initialResumeData = getEmptyResumeData();
       const initialContent = renderTemplate(defaultTemplate.content, initialResumeData);
 
-      const newDoc = await invoke<Document>("create_document", { title });
+      const newDoc = await invoke<Document>("create_document_with_template", {
+        title,
+        templateId: defaultTemplate.id,
+        resumeData: JSON.stringify(initialResumeData),
+        initialContent,
+      });
       if (newDoc) {
-        newDoc.template_id = defaultTemplate.id;
-        newDoc.resume_data = JSON.stringify(initialResumeData);
-        newDoc.content = initialContent;
-
         setDocuments((prev) => [newDoc, ...prev]);
         setCurrentDocument(newDoc);
         setResumeData(initialResumeData);
-        setPdfPath(null);
-
-        // Queue save with rendered template content and resume data
-        updateDocumentStateAndQueueSave(
-          newDoc.id,
-          initialContent,
-          defaultTemplate.id,
-          JSON.stringify(initialResumeData)
-        );
+        setPreview(null);
+        setLatexErrors([]);
+        setEditorMode("form");
+        setSidebarCollapsed(true);
       }
     } catch (err) {
       setError(`Failed to create document: ${err}`);
@@ -487,6 +564,8 @@ function App() {
   };
 
   const selectDocument = async (id: string) => {
+    // The drawer overlays the editor, so get it out of the way once a document is picked.
+    setSidebarCollapsed(true);
     if (currentDocument?.id === id) return;
 
     await flushSave();
@@ -495,7 +574,8 @@ function App() {
       const doc = await invoke<Document>("get_document", { id });
       setCurrentDocument(doc);
       syncDocumentResumeData(doc);
-      setPdfPath(null);
+      setPreview(null);
+      setLatexErrors([]);
     } catch (err) {
       setError(`Failed to load document: ${err}`);
     }
@@ -504,21 +584,25 @@ function App() {
   const updateContentDirect = (content: string) => {
     if (!currentDocument) return;
 
-    setCurrentDocument((prev) => (prev ? { ...prev, content } : null));
+    // Hand edits detach the source from the form so later form changes can't
+    // silently overwrite them.
+    const detachedData: ResumeData = isSourceDetached
+      ? resumeData
+      : { ...resumeData, sourceEditedManually: true };
+    if (!isSourceDetached) setResumeData(detachedData);
+
+    const resumeDataString = JSON.stringify(detachedData);
+    setCurrentDocument((prev) =>
+      prev ? { ...prev, content, resume_data: resumeDataString } : null
+    );
 
     pendingSaveRef.current = {
       id: currentDocument.id,
       content,
       template_id: currentDocument.template_id,
-      resume_data: currentDocument.resume_data,
+      resume_data: resumeDataString,
     };
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = setTimeout(() => {
-      flushSave();
-    }, 500);
+    scheduleSave(SAVE_DEBOUNCE_MS);
   };
 
   const deleteDocument = async (id: string) => {
@@ -534,23 +618,24 @@ function App() {
 
     try {
       await invoke("delete_document", { id });
-      setDocuments((prev) => {
-        const remaining = prev.filter((d) => d.id !== id);
-        if (currentDocRef.current?.id === id) {
-          const nextDoc = remaining[0] || null;
-          setCurrentDocument(nextDoc);
-          syncDocumentResumeData(nextDoc);
-          setPdfPath(null);
-        }
-        return remaining;
-      });
+      const remaining = documents.filter((d) => d.id !== id);
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
+      if (currentDocRef.current?.id === id) {
+        const nextDoc = remaining[0] || null;
+        setCurrentDocument(nextDoc);
+        syncDocumentResumeData(nextDoc);
+        setPreview(null);
+        setLatexErrors([]);
+      }
     } catch (err) {
       setError(`Failed to delete document: ${err}`);
     }
   };
 
+  const hasPreviewForCurrent = !!preview && preview.docId === currentDocument?.id;
+
   const exportPDF = async () => {
-    if (!currentDocument || !pdfPath) return;
+    if (!currentDocument || !hasPreviewForCurrent) return;
 
     try {
       const { save } = await import("@tauri-apps/api/dialog");
@@ -564,7 +649,7 @@ function App() {
           id: currentDocument.id,
           destination: filePath,
         });
-        alert("PDF exported successfully!");
+        setNotice(`PDF exported to ${filePath}`);
       }
     } catch (err) {
       setError(`Failed to export PDF: ${err}`);
@@ -590,7 +675,7 @@ function App() {
 
     const handleMouseUp = () => {
       setIsResizing(false);
-      localStorage.setItem("vitae_split_ratio", splitRatio.toString());
+      localStorage.setItem("vitae_split_ratio", splitRatioRef.current.toString());
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -599,18 +684,25 @@ function App() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isResizing, splitRatio]);
+  }, [isResizing]);
 
-  // Escape key closes the sidebar drawer if open
+  // Escape key closes the sidebar drawer if open (dialogs handle their own Escape)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !sidebarCollapsed) {
+      if (e.key === "Escape" && !sidebarCollapsed && !isModalOpen()) {
         setSidebarCollapsed(true);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [sidebarCollapsed]);
+
+  // Status notices (e.g. "exported") fade on their own
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   return (
     <div className="app">
@@ -629,7 +721,12 @@ function App() {
           onSelectTemplate={handleSelectTemplate}
           onTemplatesUpdated={loadTemplates}
           onClose={() => setShowTemplateModal(false)}
-          onImportDataIntoResume={handleImportDataIntoResume}
+        />
+      )}
+      {showNewDocument && (
+        <NewDocumentDialog
+          onCreate={createNewDocument}
+          onCancel={() => setShowNewDocument(false)}
         />
       )}
       {showSetup && (
@@ -645,7 +742,7 @@ function App() {
         documents={documents}
         currentDocument={currentDocument}
         onSelectDocument={selectDocument}
-        onCreateDocument={createNewDocument}
+        onCreateDocument={() => setShowNewDocument(true)}
         onDeleteDocument={deleteDocument}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -657,8 +754,8 @@ function App() {
           aria-hidden="true"
         />
       )}
-      <div className="main-content">
-        <div className="toolbar">
+      <main className="main-content">
+        <header className="toolbar">
           <div className="toolbar-left">
             <button
               type="button"
@@ -666,6 +763,7 @@ function App() {
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               title={sidebarCollapsed ? "Open documents drawer" : "Close documents drawer"}
               aria-label={sidebarCollapsed ? "Open documents drawer" : "Close documents drawer"}
+              aria-expanded={!sidebarCollapsed}
               data-testid="btn-toggle-sidebar"
             >
               <IconSidebar size={15} />
@@ -680,6 +778,8 @@ function App() {
                 className={`btn-layout-toggle ${viewMode === "split" ? "active" : ""}`}
                 onClick={() => setViewMode("split")}
                 title="Split View: Form & Preview"
+                aria-label="Split view"
+                aria-pressed={viewMode === "split"}
                 data-testid="btn-toggle-split"
               >
                 <IconSplit size={14} />
@@ -690,6 +790,8 @@ function App() {
                 className={`btn-layout-toggle ${viewMode === "editor" ? "active" : ""}`}
                 onClick={() => setViewMode("editor")}
                 title="Form Only (Full width)"
+                aria-label="Editor only"
+                aria-pressed={viewMode === "editor"}
                 data-testid="btn-toggle-editor"
               >
                 <IconForm size={14} />
@@ -700,6 +802,8 @@ function App() {
                 className={`btn-layout-toggle ${viewMode === "preview" ? "active" : ""}`}
                 onClick={() => setViewMode("preview")}
                 title="Preview Only"
+                aria-label="Preview only"
+                aria-pressed={viewMode === "preview"}
                 data-testid="btn-toggle-preview"
               >
                 <IconEye size={14} />
@@ -711,6 +815,7 @@ function App() {
                 onClick={() => setShowSetup(true)}
                 className="btn-setup"
                 title="LaTeX not detected"
+                aria-label="Setup LaTeX"
               >
                 <IconSettings size={14} />
                 <span>Setup LaTeX</span>
@@ -720,6 +825,7 @@ function App() {
               onClick={() => setShowTemplateModal(true)}
               className="btn-secondary"
               title="Browse, change, or import templates"
+              aria-label={`Templates (${templates.length})`}
               data-testid="btn-open-templates"
             >
               <IconPalette size={14} />
@@ -739,6 +845,8 @@ function App() {
               className={`btn-auto-compile ${autoCompile ? "active" : ""}`}
               disabled={!currentDocument}
               title={autoCompile ? "Auto-compile active (1s debounce)" : "Enable auto-compile on change"}
+              aria-label="Auto-compile"
+              aria-pressed={autoCompile}
             >
               <IconAuto size={14} />
               <span>Auto</span>
@@ -747,6 +855,7 @@ function App() {
               onClick={compileLatex}
               disabled={!currentDocument || isCompiling}
               className="btn-compile"
+              aria-label={isCompiling ? "Compiling" : "Compile"}
             >
               <IconCompile size={14} />
               <span>{isCompiling ? "Compiling..." : "Compile"}</span>
@@ -756,14 +865,17 @@ function App() {
               disabled={!compilationLog}
               className="btn-log"
               title="View compilation log"
+              aria-label="Compilation log"
+              aria-pressed={showLog}
             >
               <IconTerminal size={14} />
               <span>Log</span>
             </button>
             <button
               onClick={exportPDF}
-              disabled={!pdfPath}
+              disabled={!hasPreviewForCurrent}
               className="btn-export"
+              aria-label="Export PDF"
             >
               <IconDownload size={14} />
               <span>Export PDF</span>
@@ -772,18 +884,29 @@ function App() {
               onClick={() => setShowSettings(true)}
               className="btn-settings"
               title="Settings & Update Channel"
+              aria-label="Settings"
               data-testid="btn-settings"
             >
               <IconSettings size={14} />
               <span>Settings</span>
             </button>
           </div>
-        </div>
+        </header>
 
         {error && (
-          <div className="error-banner">
+          <div className="error-banner" role="alert">
             {error}
-            <button onClick={() => setError(null)}>×</button>
+            <button onClick={() => setError(null)} aria-label="Dismiss error">
+              ×
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div className="notice-banner" role="status">
+            {notice}
+            <button onClick={() => setNotice(null)} aria-label="Dismiss message">
+              ×
+            </button>
           </div>
         )}
 
@@ -804,6 +927,7 @@ function App() {
                 <button
                   className={`editor-tab ${editorMode === "form" ? "active" : ""}`}
                   onClick={() => setEditorMode("form")}
+                  aria-pressed={editorMode === "form"}
                   data-testid="tab-form-view"
                   title="Structured visual form"
                 >
@@ -813,6 +937,7 @@ function App() {
                 <button
                   className={`editor-tab ${editorMode === "code" ? "active" : ""}`}
                   onClick={() => setEditorMode("code")}
+                  aria-pressed={editorMode === "code"}
                   data-testid="tab-code-view"
                   title="Direct LaTeX source editor"
                 >
@@ -822,21 +947,28 @@ function App() {
               </div>
             </div>
 
-            {editorMode === "form" ? (
-              <ResumeForm
-                data={resumeData}
-                onChange={handleResumeDataChange}
-                customFields={extractedAnalysis.customVariables}
-                templateName={activeTemplate.name}
-                onChangeTemplateClick={() => setShowTemplateModal(true)}
-              />
-            ) : (
-              <Editor
-                content={currentDocument?.content || ""}
-                onChange={updateContentDirect}
-                errors={latexErrors}
-              />
-            )}
+            <ErrorBoundary resetKey={`${currentDocument?.id}-${editorMode}`} fallbackTitle="The editor hit an error">
+              {editorMode === "form" ? (
+                <ResumeForm
+                  data={resumeData}
+                  onChange={handleResumeDataChange}
+                  customFields={extractedAnalysis.customVariables}
+                  templateName={activeTemplate.name}
+                  onChangeTemplateClick={() => setShowTemplateModal(true)}
+                  locked={isSourceDetached}
+                  onRegenerateFromForm={handleRegenerateFromForm}
+                  onOpenSource={() => setEditorMode("code")}
+                />
+              ) : (
+                <Suspense fallback={<div className="editor-loading">Loading editor...</div>}>
+                  <Editor
+                    content={currentDocument?.content || ""}
+                    onChange={updateContentDirect}
+                    errors={latexErrors}
+                  />
+                </Suspense>
+              )}
+            </ErrorBoundary>
           </div>
 
           {viewMode === "split" && (
@@ -863,20 +995,26 @@ function App() {
               flex: viewMode === "split" ? "none" : undefined,
             }}
           >
-            <PDFViewer pdfPath={pdfPath} isCompiling={isCompiling} />
+            <PDFViewer
+              documentId={preview && hasPreviewForCurrent ? preview.docId : null}
+              revision={preview && hasPreviewForCurrent ? preview.revision : 0}
+              isCompiling={isCompiling}
+            />
           </div>
         </div>
 
         {showLog && compilationLog && (
-          <div className="compilation-log">
+          <section className="compilation-log" aria-label="Compilation log">
             <div className="log-header">
-              <h3>Compilation Log</h3>
-              <button onClick={() => setShowLog(false)}>×</button>
+              <h2>Compilation Log</h2>
+              <button onClick={() => setShowLog(false)} aria-label="Close log">
+                ×
+              </button>
             </div>
             <pre>{compilationLog}</pre>
-          </div>
+          </section>
         )}
-      </div>
+      </main>
     </div>
   );
 }

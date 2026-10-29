@@ -99,11 +99,11 @@ export interface ResumeData {
   customSections?: ResumeCustomSection[];
   customVariables?: Record<string, string>;
   sectionOrder?: string[];
-  personalFieldOrder?: string[];
-  experienceFieldOrder?: string[];
-  educationFieldOrder?: string[];
-  projectFieldOrder?: string[];
-  skillFieldOrder?: string[];
+  /**
+   * Set when the LaTeX source was edited by hand. The form then stops
+   * re-rendering the document so those edits aren't silently overwritten.
+   */
+  sourceEditedManually?: boolean;
 }
 
 export interface ExtractedTemplateField {

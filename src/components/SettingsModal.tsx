@@ -5,6 +5,8 @@ import { open } from "@tauri-apps/api/shell";
 import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
+import { checkGithubReleases, RELEASES_PAGE_URL } from "../utils/updates";
+import { useDialog } from "../hooks/useDialog";
 import { IconSettings, IconX } from "./Icons";
 
 interface SettingsModalProps {
@@ -23,6 +25,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResponse | null>(null);
   const [installing, setInstalling] = useState(false);
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
 
   useEffect(() => {
     getVersion()
@@ -65,38 +68,14 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
       // Fallback: If updater manifest JSON is not found, check GitHub Releases directly
       let fallbackSuccess = false;
       try {
-        const ghResponse = await fetch("https://api.github.com/repos/TheJonathanC/vitae/releases");
-        if (ghResponse.ok) {
-          const releases = await ghResponse.json();
-          const targetRelease = releases.find((r: any) => {
-            if (channel === "beta") return true;
-            return !r.prerelease;
-          });
-
-          if (targetRelease) {
-            const rawTag = targetRelease.tag_name || "";
-            const remoteVersion = rawTag.replace(/^v/, "");
-            const localVersion = version.replace(/^v/, "");
-
-            if (remoteVersion && remoteVersion !== localVersion) {
-              const exeAsset = targetRelease.assets?.find((a: any) =>
-                a.name.endsWith(".exe") || a.name.endsWith(".msi")
-              );
-              const downloadUrl = exeAsset?.browser_download_url || targetRelease.html_url;
-
-              setAvailableUpdate({
-                should_update: true,
-                version: rawTag,
-                date: targetRelease.published_at,
-                body: targetRelease.body || null,
-                download_url: downloadUrl,
-              });
-              setStatusMessage(`Update ${rawTag} is available on GitHub!`);
-              fallbackSuccess = true;
-            } else {
-              setStatusMessage(`You are up to date! (${rawTag} is the latest release)`);
-              fallbackSuccess = true;
-            }
+        const release = await checkGithubReleases(channel, version);
+        if (release) {
+          fallbackSuccess = true;
+          if (release.should_update) {
+            setAvailableUpdate(release);
+            setStatusMessage(`Update ${release.version} is available on GitHub!`);
+          } else {
+            setStatusMessage(`You are up to date! (${release.version} is the latest release)`);
           }
         }
       } catch (ghErr) {
@@ -106,7 +85,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
       if (!fallbackSuccess) {
         const errStr = String(err);
         if (errStr.includes("Could not fetch a valid release JSON") || errStr.includes("Could not fetch release manifest")) {
-          setStatusMessage("No updater manifest found for this channel. Check https://github.com/TheJonathanC/vitae/releases for updates.");
+          setStatusMessage(`No updater manifest found for this channel. Check ${RELEASES_PAGE_URL} for updates.`);
         } else {
           setStatusMessage(`Update check failed: ${errStr}`);
         }
@@ -146,7 +125,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
     } catch (err) {
       console.error("Failed to install update:", err);
       try {
-        await open("https://github.com/TheJonathanC/vitae/releases");
+        await open(RELEASES_PAGE_URL);
         setStatusMessage(`Direct installation failed (${err}). Opened releases page in browser.`);
       } catch {
         setStatusMessage(`Failed to install update: ${err}`);
@@ -157,10 +136,17 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
 
   return (
     <div className="setup-overlay" data-testid="settings-modal-overlay">
-      <div className="setup-modal settings-modal">
+      <div
+        ref={dialogRef}
+        className="setup-modal settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        tabIndex={-1}
+      >
         <div className="setup-header">
-          <h2>
-            <IconSettings size={18} />
+          <h2 id="settings-title">
+            <IconSettings size={18} aria-hidden="true" />
             <span>Settings</span>
           </h2>
           <button className="settings-close-btn" onClick={onClose} aria-label="Close">
@@ -175,28 +161,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
               Choose which release stream you want to receive updates from.
             </p>
 
-            <div className="channel-options">
-              <label
-                className={`channel-card ${channel === "beta" ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="update-channel"
-                  value="beta"
-                  checked={channel === "beta"}
-                  onChange={() => handleChannelSelect("beta")}
-                />
-                <div className="channel-info">
-                  <div className="channel-title">
-                    <span>Beta Channel (Recommended)</span>
-                    <span className="badge-beta">v1.1-beta</span>
-                  </div>
-                  <div className="channel-text">
-                    Receive the latest automated builds, bug fixes, and preview features directly from commits.
-                  </div>
-                </div>
-              </label>
-
+            <div className="channel-options" role="radiogroup" aria-label="Release channel">
               <label
                 className={`channel-card ${channel === "stable" ? "selected" : ""}`}
               >
@@ -209,11 +174,32 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
                 />
                 <div className="channel-info">
                   <div className="channel-title">
-                    <span>Stable Channel</span>
-                    <span className="badge-stable">v1.1</span>
+                    <span>Stable Channel (Recommended)</span>
+                    <span className="badge-stable">Stable</span>
                   </div>
                   <div className="channel-text">
-                    Only receive official milestone releases once tested and promoted to stable.
+                    Only receive official releases once they have been tested and promoted to stable.
+                  </div>
+                </div>
+              </label>
+
+              <label
+                className={`channel-card ${channel === "beta" ? "selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="update-channel"
+                  value="beta"
+                  checked={channel === "beta"}
+                  onChange={() => handleChannelSelect("beta")}
+                />
+                <div className="channel-info">
+                  <div className="channel-title">
+                    <span>Beta Channel</span>
+                    <span className="badge-beta">Beta</span>
+                  </div>
+                  <div className="channel-text">
+                    Receive automated builds from the latest commits, with new features and fixes before they are tested for stable.
                   </div>
                 </div>
               </label>

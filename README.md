@@ -134,9 +134,12 @@ Drag `Vitae.app` to your `/Applications` folder to use Vitae like any native Mac
 
 Vitae includes a GitHub Actions CI/CD pipeline (`.github/workflows/ci-cd.yml`) and in-app release channel toggling:
 
-- **Beta Channel (`v1.1-beta`)**: Every commit to `main` is automatically tested (Rust + React unit tests) and published as a beta release (`v1.1.x-beta.<build>`) with rolling updater manifest `latest-beta.json`.
-- **Stable Channel (`v1.1+`)**: When tagged as a stable release (e.g. `v1.1.2`), the pipeline generates the `latest.json` manifest.
-- **In-App Channel Switcher**: Users can open **⚙️ Settings** to switch between Beta and Stable channels at any time and check for updates manually or on startup.
+- **Stable Channel (default)**: When tagged as a stable release (e.g. `v1.1.2`), the pipeline generates the `latest.json` manifest. New installs follow this channel.
+- **Beta Channel (opt-in)**: Every commit to `main` is automatically tested (Rust + React unit tests) and published as a pre-release of the *next* patch version (after `1.1.2`, betas are `1.1.3-beta.<build>`), with the rolling updater manifest `latest-beta.json`.
+- **In-App Channel Switcher**: Users can open **⚙️ Settings** to switch between Stable and Beta channels at any time and check for updates manually or on startup.
+- **Platforms**: The pipeline currently builds and auto-updates **Windows** installers only. On macOS and Linux, build from source (see above); the in-app update check links to the releases page there instead of offering a Windows installer.
+
+GitHub Actions are pinned to commit SHAs, workflow permissions are read-only except for the release job, and the update-signing key is only exposed to the Tauri bundling step, not to the frontend build.
 
 ### GitHub Repository Secrets for Auto-Updates:
 To enable automatic binary signing and generation of the updater signatures:
@@ -147,9 +150,11 @@ To enable automatic binary signing and generation of the updater signatures:
 ## 📖 Usage
 
 ### Creating a Document
-1. Click the **+ New** button in the sidebar
+1. Open the **Docs** drawer and click **+ New**
 2. Enter a document title
-3. Start writing LaTeX code in the editor
+3. Fill in the **Visual Form**, or switch to **LaTeX Source** to edit the generated LaTeX directly
+
+Editing the LaTeX source by hand pauses the form, so later form changes can't overwrite your edits. Use **Regenerate from form** to discard the manual edits and go back to the form.
 
 ### Compiling to PDF
 1. Write your LaTeX content
@@ -182,7 +187,9 @@ vitae/
 ├── src-tauri/                # Rust backend
 │   ├── src/
 │   │   ├── main.rs           # Tauri application & commands
+│   │   ├── latex.rs          # Sandboxed pdflatex runner & log parsing
 │   │   └── db.rs             # SQLite database operations
+│   ├── templates/            # Built-in resume templates (shared with the frontend)
 │   ├── Cargo.toml            # Rust dependencies
 │   └── tauri.conf.json       # Tauri configuration
 ├── index.html                # HTML entry point
@@ -213,6 +220,9 @@ Documents are stored in a local SQLite database at:
 
 Temporary LaTeX compilation files are stored in:
 - `{AppData}/temp/`
+
+### Compilation sandbox
+`pdflatex` runs with shell escape disabled and, on TeX Live / MacTeX, with `openin_any=p` / `openout_any=p`, so a document or imported template can't read or write files outside the compile directory (for example, it can't embed `~/.ssh` keys into a PDF). Each pass is stopped after 120 seconds, so an infinite TeX loop can't hang the app. MiKTeX doesn't honour the `openin_any` setting; shell escape is still disabled there.
 
 ## 🎯 Roadmap
 

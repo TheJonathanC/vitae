@@ -1,5 +1,7 @@
 import { loader } from "@monaco-editor/react";
-import * as monaco from "monaco-editor";
+// Editor core + features only; see monacoFeatures.ts for why languages are excluded.
+import "./monacoFeatures";
+import * as monaco from "monaco-editor/editor/editor.api";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 
 // Set up Monaco environment to use local Web Worker

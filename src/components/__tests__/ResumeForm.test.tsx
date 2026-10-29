@@ -179,34 +179,106 @@ describe("ResumeForm component", () => {
     );
   });
 
-  it("allows reordering items in the personal info section (e.g. moving location and phone)", () => {
+  it("does not show contact-field reorder arrows (templates fix the contact order)", () => {
+    render(<ResumeForm data={initialData} onChange={vi.fn()} />);
+    expect(screen.queryByTestId("btn-move-personal-phone-up")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("btn-move-personal-location-down")).not.toBeInTheDocument();
+  });
+
+  it("associates every field label with its input", () => {
+    render(<ResumeForm data={initialData} onChange={vi.fn()} />);
+    expect(screen.getByLabelText("Full Name *")).toHaveValue("Taylor Swift");
+    expect(screen.getByLabelText("Email")).toHaveValue(initialData.personal.email);
+    expect(screen.getAllByLabelText("Role / Position")[0]).toHaveValue(initialData.experience[0].role);
+    expect(screen.getAllByLabelText("Bullet 1")[0]).toHaveValue(initialData.experience[0].bullets[0]);
+  });
+
+  it("uses a real button for section headers instead of nesting buttons in a clickable header", () => {
+    render(<ResumeForm data={initialData} onChange={vi.fn()} />);
+    const toggle = screen.getByRole("button", { name: /^Experience \(2\)$/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("section-card-experience").querySelector('[role="button"]')).toBeNull();
+  });
+
+  it("asks before removing an entry that has content", () => {
     const onChange = vi.fn();
+    const confirmSpy = vi.mocked(window.confirm);
+    confirmSpy.mockReturnValueOnce(false);
     render(<ResumeForm data={initialData} onChange={onChange} />);
 
-    // Stationary fields must NOT have reorder arrows
-    expect(screen.queryByTestId("btn-move-personal-name-up")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("btn-move-personal-title-up")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("btn-move-personal-summary-up")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("btn-remove-experience-0"));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
 
-    // Move phone up (initially at index 1 after email)
-    const movePhoneUp = screen.getByTestId("btn-move-personal-phone-up");
-    fireEvent.click(movePhoneUp);
-
+    confirmSpy.mockReturnValueOnce(true);
+    fireEvent.click(screen.getByTestId("btn-remove-experience-0"));
     expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ experience: [initialData.experience[1]] })
+    );
+  });
+
+  it("removes an empty entry without asking", () => {
+    const onChange = vi.fn();
+    const confirmSpy = vi.mocked(window.confirm);
+    confirmSpy.mockClear();
+    const data: ResumeData = {
+      ...initialData,
+      experience: [{ id: "blank", role: "", company: "", bullets: [""] }],
+    };
+    render(<ResumeForm data={data} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("btn-remove-experience-0"));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ experience: [] }));
+  });
+
+  it("edits bullet points of custom sections", () => {
+    const onChange = vi.fn();
+    const data: ResumeData = {
+      ...initialData,
+      customSections: [{ id: "sec-1", title: "Awards", content: "", bullets: ["Dean's List"] }],
+    };
+    render(<ResumeForm data={data} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText("Awards bullet 1"), { target: { value: "Valedictorian" } });
+    expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        personalFieldOrder: expect.arrayContaining(["phone", "email"]),
+        customSections: [expect.objectContaining({ bullets: ["Valedictorian"] })],
       })
     );
 
-    // Move location down
-    const moveLocationDown = screen.getByTestId("btn-move-personal-location-down");
-    fireEvent.click(moveLocationDown);
-
-    expect(onChange).toHaveBeenCalledWith(
+    fireEvent.click(screen.getByTestId("btn-add-custom-bullet-0"));
+    expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        personalFieldOrder: expect.any(Array),
+        customSections: [expect.objectContaining({ bullets: ["Dean's List", ""] })],
       })
     );
+  });
+
+  it("locks the form and offers to regenerate when the LaTeX source was edited by hand", () => {
+    const onChange = vi.fn();
+    const onRegenerate = vi.fn();
+    const onOpenSource = vi.fn();
+    render(
+      <ResumeForm
+        data={{ ...initialData, sourceEditedManually: true }}
+        onChange={onChange}
+        locked
+        onRegenerateFromForm={onRegenerate}
+        onOpenSource={onOpenSource}
+      />
+    );
+
+    expect(screen.getByTestId("form-locked-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("input-personal-name")).toBeDisabled();
+    expect(screen.getByTestId("btn-add-experience")).toBeDisabled();
+
+    fireEvent.click(screen.getByText("Edit LaTeX Source"));
+    expect(onOpenSource).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("btn-regenerate-from-form"));
+    expect(onRegenerate).toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("allows reordering experience entries and reflects on experience items", () => {

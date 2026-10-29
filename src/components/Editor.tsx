@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import MonacoEditor, { Monaco, OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { LatexError } from "../types";
+// Registers the LaTeX language and points the loader at the local Monaco build.
+// Imported here (not in main.tsx) so Monaco is only loaded with this lazy chunk.
+import "../monaco";
 
 interface EditorProps {
   content: string;

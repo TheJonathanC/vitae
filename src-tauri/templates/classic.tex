@@ -1,0 +1,86 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\hypersetup{colorlinks=false,pdfborder={0 0 0}}
+
+\titleformat{\section}{\large\bfseries\scshape}{}{0em}{}[\titlerule]
+\titlespacing{\section}{0pt}{10pt}{5pt}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+    {\huge \textbf{{{name}}}} \\ \vspace{4pt}
+    {{#title}}{\large \textit{{{title}}}} \\ \vspace{2pt}{{/title}}
+    \small {{#location}}{{location}} \ $\cdot$ \ {{/location}}{{phone}}{{#email}} \ $\cdot$ \ {{email}}{{/email}}{{#website}} \ $\cdot$ \ {{website}}{{/website}}{{#linkedin}} \ $\cdot$ \ {{linkedin}}{{/linkedin}}
+\end{center}
+
+{{#summary}}
+\section{Professional Summary}
+{{summary}}
+{{/summary}}
+
+{{#education}}
+\section{Education}
+{{#items}}
+\textbf{{{institution}}}{{#location}}, {{location}}{{/location}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
+\textit{{{degree}}}
+{{#details}}\\\small {{details}}{{/details}}
+\vspace{4pt}
+{{/items}}
+{{/education}}
+
+{{#experience}}
+\section{Professional Experience}
+{{#items}}
+\textbf{{{role}}}, {{company}}{{#location}} --- {{location}}{{/location}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
+{{#highlights}}
+\begin{itemize}[leftmargin=1.5em,noitemsep,topsep=2pt]
+{{#bullets}}
+    \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+\vspace{4pt}
+{{/items}}
+{{/experience}}
+
+{{#projects}}
+\section{Key Projects}
+{{#items}}
+\textbf{{{name}}}{{#technologies}} (\textit{{{technologies}}}){{/technologies}}{{#link}} \hfill {{link}}{{/link}}
+{{#highlights}}
+\begin{itemize}[leftmargin=1.5em,noitemsep,topsep=2pt]
+{{#bullets}}
+    \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+\vspace{4pt}
+{{/items}}
+{{/projects}}
+
+{{#skills}}
+\section{Skills \& Competencies}
+{{#items}}
+\textbf{{{category}}}: {{skills}} \\
+{{/items}}
+{{/skills}}
+
+{{#customSections}}
+\section{{{title}}}
+{{#content}}{{content}} \\{{/content}}
+{{#highlights}}
+\begin{itemize}[leftmargin=1.5em,noitemsep,topsep=2pt]
+{{#bullets}}
+    \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+{{/customSections}}
+
+\end{document}

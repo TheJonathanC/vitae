@@ -1,0 +1,98 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\urlstyle{same}
+
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-0.5in}
+\addtolength{\textheight}{1.0in}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+\begin{document}
+
+\begin{center}
+    {\Huge \scshape {{name}}} \\ \vspace{2pt}
+    {{#title}}{\large \textit{{{title}}}} \\ \vspace{2pt}{{/title}}
+    \small {{phone}} {{#email}}$|$ \href{mailto:{{email}}}{{{email}}}{{/email}} {{#website}}$|$ \href{{{website}}}{{{website}}}{{/website}} {{#linkedin}}$|$ \href{https://{{linkedin}}}{{{linkedin}}}{{/linkedin}} {{#github}}$|$ \href{https://{{github}}}{{{github}}}{{/github}} {{#location}}$|$ {{location}}{{/location}}
+\end{center}
+
+{{#summary}}
+\section{Summary}
+{{summary}}
+{{/summary}}
+
+{{#experience}}
+\section{Experience}
+{{#items}}
+\textbf{{{role}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
+\textit{{{company}}}{{#location}} \hfill {{location}}{{/location}}
+{{#highlights}}
+\begin{itemize}[noitemsep,topsep=1pt]
+{{#bullets}}
+    \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+\vspace{4pt}
+{{/items}}
+{{/experience}}
+
+{{#education}}
+\section{Education}
+{{#items}}
+\textbf{{{institution}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
+\textit{{{degree}}}{{#location}} \hfill {{location}}{{/location}}
+{{#details}}\\\small {{details}}{{/details}}
+\vspace{4pt}
+{{/items}}
+{{/education}}
+
+{{#projects}}
+\section{Projects}
+{{#items}}
+\textbf{{{name}}}{{#technologies}} $|$ \textit{{{technologies}}}{{/technologies}}{{#link}} \hfill \href{{{link}}}{Link}{{/link}}
+{{#highlights}}
+\begin{itemize}[noitemsep,topsep=1pt]
+{{#bullets}}
+    \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+\vspace{4pt}
+{{/items}}
+{{/projects}}
+
+{{#skills}}
+\section{Technical Skills}
+{{#items}}
+\textbf{{{category}}}: {{skills}} \\
+{{/items}}
+{{/skills}}
+
+{{#customSections}}
+\section{{{title}}}
+{{#content}}{{content}} \\{{/content}}
+{{#highlights}}
+\begin{itemize}[noitemsep,topsep=1pt]
+{{#bullets}}
+    \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+{{/customSections}}
+
+\end{document}

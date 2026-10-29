@@ -1,79 +1,86 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import PDFViewer, { uint8ArrayToBase64 } from "../PDFViewer";
+import PDFViewer from "../PDFViewer";
+import { invoke } from "@tauri-apps/api/tauri";
 
-// Mock Tauri APIs
 vi.mock("@tauri-apps/api/tauri", () => ({
-  invoke: vi.fn().mockRejectedValue(new Error("Command not found")),
-  convertFileSrc: vi.fn((path: string) => `asset://localhost/${path}`),
+  invoke: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/fs", () => ({
-  readBinaryFile: vi.fn().mockRejectedValue(new Error("File not found")),
-}));
+const DOC_ID = "a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8";
 
 describe("PDFViewer component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(invoke).mockResolvedValue("JVBERi0xLjQ=");
   });
 
-  it("renders placeholder when pdfPath is null", () => {
-    render(<PDFViewer pdfPath={null} />);
-    expect(
-      screen.getByText(/Compile your LaTeX document to preview the PDF/i)
-    ).toBeInTheDocument();
+  it("renders placeholder when there is no compiled document", () => {
+    render(<PDFViewer documentId={null} revision={0} />);
+    expect(screen.getByText(/Click Compile .* to preview the PDF/i)).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
-  it("renders iframe when pdfPath is provided", async () => {
-    render(<PDFViewer pdfPath="C:/path/to/test.pdf" />);
+  it("requests the PDF by document id and renders it as a data URL", async () => {
+    render(<PDFViewer documentId={DOC_ID} revision={1} />);
 
     await waitFor(() => {
       const iframe = screen.getByTitle("PDF Preview");
-      expect(iframe).toBeInTheDocument();
-      expect(iframe.getAttribute("src")).toContain("asset://localhost/C:/path/to/test.pdf");
-      expect(iframe.getAttribute("src")).toMatch(/\?t=\d+/);
+      expect(iframe.getAttribute("src")).toBe("data:application/pdf;base64,JVBERi0xLjQ=");
     });
+    expect(invoke).toHaveBeenCalledWith("read_pdf_bytes", { id: DOC_ID });
   });
 
-  it("strips pre-existing query parameters before generating asset URL", async () => {
-    const { convertFileSrc } = await import("@tauri-apps/api/tauri");
-    render(<PDFViewer pdfPath="C:/path/to/test.pdf?t=999999" />);
+  it("reloads when the revision changes", async () => {
+    const { rerender } = render(<PDFViewer documentId={DOC_ID} revision={1} />);
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
 
-    await waitFor(() => {
-      expect(convertFileSrc).toHaveBeenCalledWith("C:/path/to/test.pdf");
-    });
+    rerender(<PDFViewer documentId={DOC_ID} revision={2} />);
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
   });
 
-  it("updates correctly when pdfPath changes from path to null", async () => {
-    const { rerender } = render(<PDFViewer pdfPath="C:/path/to/test.pdf" />);
+  it("returns to the placeholder when the document is cleared", async () => {
+    const { rerender } = render(<PDFViewer documentId={DOC_ID} revision={1} />);
 
     await waitFor(() => {
       expect(screen.getByTitle("PDF Preview")).toBeInTheDocument();
     });
 
-    rerender(<PDFViewer pdfPath={null} />);
+    rerender(<PDFViewer documentId={null} revision={0} />);
 
-    expect(
-      screen.getByText(/Compile your LaTeX document to preview the PDF/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/to preview the PDF/i)).toBeInTheDocument();
     expect(screen.queryByTitle("PDF Preview")).not.toBeInTheDocument();
   });
 
-  it("renders error state when convertFileSrc throws", async () => {
-    const { convertFileSrc } = await import("@tauri-apps/api/tauri");
-    vi.mocked(convertFileSrc).mockImplementationOnce(() => {
-      throw new Error("Conversion failed");
-    });
+  it("renders error state when the PDF can't be read", async () => {
+    vi.mocked(invoke).mockRejectedValueOnce("Failed to read compiled PDF: not found");
 
-    render(<PDFViewer pdfPath="C:/bad/path.pdf" />);
+    render(<PDFViewer documentId={DOC_ID} revision={1} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load PDF: Error: Conversion failed/i)).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(/Failed to load PDF: Failed to read compiled PDF/);
     });
   });
 
+  it("ignores a response that arrives after the document changed", async () => {
+    let resolveFirst: (value: string) => void = () => {};
+    vi.mocked(invoke)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve as (v: string) => void)))
+      .mockResolvedValueOnce("U0VDT05E");
+
+    const { rerender } = render(<PDFViewer documentId={DOC_ID} revision={1} />);
+    rerender(<PDFViewer documentId="b1b2b3b4-b1b2-c1c2-d1d2-d3d4d5d6d7d8" revision={2} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("PDF Preview").getAttribute("src")).toContain("U0VDT05E");
+    });
+    resolveFirst("RklSU1Q=");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByTitle("PDF Preview").getAttribute("src")).toContain("U0VDT05E");
+  });
+
   it("renders compiling indicator badge when isCompiling is true and pdf is loaded", async () => {
-    render(<PDFViewer pdfPath="C:/path/to/test.pdf" isCompiling={true} />);
+    render(<PDFViewer documentId={DOC_ID} revision={1} isCompiling={true} />);
 
     await waitFor(() => {
       expect(screen.getByTestId("pdf-compiling-indicator")).toBeInTheDocument();
@@ -81,46 +88,8 @@ describe("PDFViewer component", () => {
     });
   });
 
-  it("loads and renders PDF via read_pdf_bytes data URI to prevent asset.localhost errors", async () => {
-    const { invoke } = await import("@tauri-apps/api/tauri");
-    const fakeBytes = new TextEncoder().encode("%PDF-1.4 test data");
-    vi.mocked(invoke).mockResolvedValueOnce(Array.from(fakeBytes));
-
-    render(<PDFViewer pdfPath="C:/path/to/resume.pdf" />);
-
-    await waitFor(() => {
-      const iframe = screen.getByTitle("PDF Preview");
-      expect(iframe).toBeInTheDocument();
-      expect(iframe.getAttribute("src")).toContain("data:application/pdf;base64,");
-    });
-  });
-
-  it("falls back to readBinaryFile when read_pdf_bytes invoke fails", async () => {
-    const { invoke } = await import("@tauri-apps/api/tauri");
-    const { readBinaryFile } = await import("@tauri-apps/api/fs");
-    vi.mocked(invoke).mockRejectedValueOnce(new Error("invoke error"));
-    const fakeBytes = new TextEncoder().encode("%PDF-1.4 fallback data");
-    vi.mocked(readBinaryFile).mockResolvedValueOnce(fakeBytes);
-
-    render(<PDFViewer pdfPath="C:/path/to/resume.pdf" />);
-
-    await waitFor(() => {
-      const iframe = screen.getByTitle("PDF Preview");
-      expect(iframe).toBeInTheDocument();
-      expect(iframe.getAttribute("src")).toContain("data:application/pdf;base64,");
-    });
-  });
-
-  it("correctly encodes Uint8Array to base64 including chunks", () => {
-    const sample = new Uint8Array([72, 101, 108, 108, 111]); // "Hello"
-    expect(uint8ArrayToBase64(sample)).toBe(btoa("Hello"));
-
-    // Larger buffer to exercise chunking
-    const large = new Uint8Array(10000);
-    for (let i = 0; i < large.length; i++) {
-      large[i] = i % 256;
-    }
-    expect(uint8ArrayToBase64(large)).toBeDefined();
-    expect(uint8ArrayToBase64(large).length).toBeGreaterThan(0);
+  it("shows a compiling message instead of the placeholder hint while the first compile runs", () => {
+    render(<PDFViewer documentId={null} revision={0} isCompiling={true} />);
+    expect(screen.getByText(/Compiling your document/i)).toBeInTheDocument();
   });
 });

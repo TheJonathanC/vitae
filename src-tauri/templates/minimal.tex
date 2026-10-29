@@ -1,0 +1,91 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.6in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue}
+\urlstyle{same}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+
+\newcommand{\resumesection}[1]{%
+  \vspace{6pt}%
+  {\large\textbf{\uppercase{#1}}}%
+  \vspace{2pt}\hrule\vspace{4pt}%
+}
+
+\begin{document}
+\pagestyle{empty}
+
+{\LARGE \textbf{{{name}}}} \\
+{{#title}}{\textbf{{{title}}}} \\{{/title}}
+\small {{#email}}{{email}} \ $\vert$ \ {{/email}}{{phone}}{{#location}} \ $\vert$ \ {{location}}{{/location}}{{#github}} \ $\vert$ \ \href{https://{{github}}}{{{github}}}{{/github}}{{#linkedin}} \ $\vert$ \ \href{https://{{linkedin}}}{{{linkedin}}}{{/linkedin}}{{#website}} \ $\vert$ \ \href{{{website}}}{{{website}}}{{/website}}
+
+{{#summary}}
+\resumesection{About}
+{{summary}}
+{{/summary}}
+
+{{#experience}}
+\resumesection{Experience}
+{{#items}}
+\textbf{{{role}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
+\textit{{{company}}}{{#location}} \hfill {{location}}{{/location}}
+{{#highlights}}
+\begin{itemize}[leftmargin=1.2em,noitemsep,topsep=1pt]
+{{#bullets}}
+  \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+\vspace{2pt}
+{{/items}}
+{{/experience}}
+
+{{#education}}
+\resumesection{Education}
+{{#items}}
+\textbf{{{degree}}} \hfill {{startDate}}{{#endDate}} -- {{endDate}}{{/endDate}} \\
+\textit{{{institution}}}{{#location}} \hfill {{location}}{{/location}}
+{{#details}}\\\small {{details}}{{/details}}
+\vspace{2pt}
+{{/items}}
+{{/education}}
+
+{{#projects}}
+\resumesection{Projects}
+{{#items}}
+\textbf{{{name}}}{{#technologies}} --- \textit{{{technologies}}}{{/technologies}}{{#link}} \hfill \href{{{link}}}{{{link}}}{{/link}}
+{{#highlights}}
+\begin{itemize}[leftmargin=1.2em,noitemsep,topsep=1pt]
+{{#bullets}}
+  \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+\vspace{2pt}
+{{/items}}
+{{/projects}}
+
+{{#skills}}
+\resumesection{Skills}
+{{#items}}
+\textbf{{{category}}}: {{skills}} \\
+{{/items}}
+{{/skills}}
+
+{{#customSections}}
+\resumesection{{{title}}}
+{{#content}}{{content}} \\{{/content}}
+{{#highlights}}
+\begin{itemize}[leftmargin=1.2em,noitemsep,topsep=1pt]
+{{#bullets}}
+  \item {{bullet}}
+{{/bullets}}
+\end{itemize}
+{{/highlights}}
+{{/customSections}}
+
+\end{document}

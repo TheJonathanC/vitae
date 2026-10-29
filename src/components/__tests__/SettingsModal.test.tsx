@@ -31,8 +31,9 @@ describe("SettingsModal component", () => {
     );
 
     expect(screen.getByText("Release Channel")).toBeInTheDocument();
-    expect(screen.getByText("Beta Channel (Recommended)")).toBeInTheDocument();
-    expect(screen.getByText("Stable Channel")).toBeInTheDocument();
+    expect(screen.getByText("Beta Channel")).toBeInTheDocument();
+    expect(screen.getByText("Stable Channel (Recommended)")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /settings/i })).toBeInTheDocument();
 
     const betaRadio = screen.getByDisplayValue("beta") as HTMLInputElement;
     expect(betaRadio.checked).toBe(true);
@@ -48,7 +49,7 @@ describe("SettingsModal component", () => {
       />
     );
 
-    const stableCard = screen.getByText("Stable Channel");
+    const stableCard = screen.getByText("Stable Channel (Recommended)");
     fireEvent.click(stableCard);
 
     expect(handleChannelChange).toHaveBeenCalledTimes(1);
@@ -92,14 +93,14 @@ describe("SettingsModal component", () => {
     // Mock fetch for GitHub Releases API
     const mockReleases = [
       {
-        tag_name: "v1.1.0-beta.9",
+        tag_name: "v1.2.0-beta.9",
         published_at: "2026-09-23T00:00:00Z",
         body: "New features",
         prerelease: true,
         assets: [
           {
-            name: "Vitae_1.1.0-beta.9_x64-setup.exe",
-            browser_download_url: "https://github.com/TheJonathanC/vitae/releases/download/v1.1.0-beta.9/Vitae_1.1.0-beta.9_x64-setup.exe",
+            name: "Vitae_1.2.0-beta.9_x64-setup.exe",
+            browser_download_url: "https://github.com/TheJonathanC/vitae/releases/download/v1.2.0-beta.9/Vitae_1.2.0-beta.9_x64-setup.exe",
           },
         ],
       },
@@ -124,11 +125,42 @@ describe("SettingsModal component", () => {
     fireEvent.click(screen.getByText("Check for Updates Now"));
 
     await waitFor(() => {
-      expect(screen.getByText(/Update v1.1.0-beta.9 is available on GitHub!/i)).toBeInTheDocument();
-      expect(screen.getByText("Download v1.1.0-beta.9")).toBeInTheDocument();
+      expect(screen.getByText(/Update v1.2.0-beta.9 is available on GitHub!/i)).toBeInTheDocument();
+      expect(screen.getByText("Download v1.2.0-beta.9")).toBeInTheDocument();
     });
 
     vi.unstubAllGlobals();
+  });
+
+  it("ignores non-version tags and releases older than the installed version", async () => {
+    (invoke as any).mockRejectedValueOnce("Could not fetch a valid release JSON from the remote.");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { tag_name: "latest-beta", prerelease: true, assets: [] },
+          { tag_name: "v1.1.0-beta.99", prerelease: true, assets: [] },
+          { tag_name: "v1.1.2", prerelease: false, assets: [] },
+        ],
+      })
+    );
+
+    render(<SettingsModal onClose={vi.fn()} currentChannel="beta" onChannelChange={vi.fn()} />);
+    fireEvent.click(screen.getByText("Check for Updates Now"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/You are up to date! \(v1.1.2 is the latest release\)/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Download/)).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("closes on Escape", () => {
+    const handleClose = vi.fn();
+    render(<SettingsModal onClose={handleClose} currentChannel="stable" onChannelChange={vi.fn()} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(handleClose).toHaveBeenCalledTimes(1);
   });
 
   it("shows friendly message when updater manifest is missing and GitHub API fails", async () => {
