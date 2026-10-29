@@ -1713,3 +1713,114 @@ h3 .tag {
   gap: 6px;
   min-width: 90px;
 }
+
+/* My details */
+.details-body {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tab {
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.tab.selected {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.details-pane {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.details-pane h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.details-pane-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.details-pane-head p {
+  margin: 0;
+}
+
+.item-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.item-row + .item-row {
+  border-top: 1px solid var(--rule);
+}
+
+.item-text {
+  display: grid;
+  min-width: 0;
+}
+
+.item-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.item-meta {
+  font-size: var(--text-sm);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+
+.item-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-row label {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.import-row select {
+  min-width: 0;
+  flex: 1;
+}

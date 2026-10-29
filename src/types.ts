@@ -147,3 +147,45 @@ export interface TexOverview {
   total_bytes: number;
   packages: TexPackage[];
 }
+
+export type LibraryKind = "experience" | "project" | "education" | "skill";
+
+/** A row from the backend; `data` is the item's JSON without its id. */
+export interface LibraryRow {
+  id: string;
+  kind: LibraryKind;
+  data: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The reusable entries a user has saved, each carrying its library id. */
+export interface Library {
+  experience: ResumeExperienceItem[];
+  project: ResumeProjectItem[];
+  education: ResumeEducationItem[];
+  skill: ResumeSkillItem[];
+}
+
+/** Which library entries a profile includes, plus its own headline and summary. */
+export interface ProfileSpec {
+  headline: string;
+  summary: string;
+  experienceIds: string[];
+  projectIds: string[];
+  educationIds: string[];
+  skillIds: string[];
+}
+
+export interface ProfileRow {
+  id: string;
+  name: string;
+  data: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Profile extends ProfileSpec {
+  id: string;
+  name: string;
+}

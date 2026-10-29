@@ -7,7 +7,8 @@ import UpdateChecker from "./components/UpdateChecker";
 import SettingsModal from "./components/SettingsModal";
 import ResumeForm from "./components/ResumeForm";
 import TemplateManager from "./components/TemplateManager";
-import NewDocumentDialog from "./components/NewDocumentDialog";
+import NewDocumentDialog, { NewResumeOptions } from "./components/NewDocumentDialog";
+import DetailsManager from "./components/DetailsManager";
 import ErrorBoundary from "./components/ErrorBoundary";
 import BuildDetails from "./components/BuildDetails";
 import {
@@ -36,6 +37,7 @@ import {
   IconSettings,
   IconChevronDown,
   IconPlus,
+  IconUser,
 } from "./components/Icons";
 import "./App.css";
 
@@ -105,6 +107,7 @@ function App() {
     return localStorage.getItem("vitae_auto_compile") !== "false";
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [showMyDetails, setShowMyDetails] = useState(false);
   const [updateChannel, setUpdateChannel] = useState<string>(getStoredChannel);
 
   // Draggable Split Pane State
@@ -515,13 +518,12 @@ function App() {
     }
   };
 
-  const createNewDocument = async (title: string) => {
+  const createNewDocument = async ({ title, templateId, resumeData: initialResumeData }: NewResumeOptions) => {
     setShowNewDocument(false);
     await flushSave();
 
     try {
-      const defaultTemplate = templates[0] || BUILTIN_TEMPLATES[0];
-      const initialResumeData = getEmptyResumeData();
+      const defaultTemplate = templates.find((t) => t.id === templateId) || templates[0] || BUILTIN_TEMPLATES[0];
       const initialContent = renderTemplate(defaultTemplate.content, initialResumeData);
 
       const newDoc = await invoke<Document>("create_document_with_template", {
@@ -795,10 +797,16 @@ function App() {
       )}
       {showNewDocument && (
         <NewDocumentDialog
+          templates={templates}
           onCreate={createNewDocument}
           onCancel={() => setShowNewDocument(false)}
+          onOpenDetails={() => {
+            setShowNewDocument(false);
+            setShowMyDetails(true);
+          }}
         />
       )}
+      {showMyDetails && <DetailsManager documents={documents} onClose={() => setShowMyDetails(false)} />}
       {showSetup && (
         <SetupGuide
           onClose={() => {
@@ -892,6 +900,16 @@ function App() {
               <span className="segmented-label">Preview</span>
             </button>
           </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setShowMyDetails(true)}
+            aria-label="My details"
+            title="My details"
+            data-testid="btn-details"
+          >
+            <IconUser size={17} />
+          </button>
           <button
             type="button"
             className="icon-button"

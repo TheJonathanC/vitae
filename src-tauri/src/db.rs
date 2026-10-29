@@ -132,6 +132,203 @@ pub fn init_database(db_path: &Path) -> Result<()> {
 
     seed_builtin_templates(&conn)?;
 
+    // The user's reusable details. Personal info is a single shared row; experiences,
+    // projects, education and skill groups live in a library; profiles pick from it.
+    // Payloads are JSON so the shape can grow without migrations.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS person (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            data TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS library_items (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS profiles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LibraryItem {
+    pub id: String,
+    pub kind: String,
+    pub data: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Profile {
+    pub id: String,
+    pub name: String,
+    pub data: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub const LIBRARY_KINDS: &[&str] = &["experience", "project", "education", "skill"];
+const MAX_PAYLOAD_BYTES: usize = 200_000;
+
+fn invalid(message: &str) -> rusqlite::Error {
+    rusqlite::Error::InvalidParameterName(message.to_string())
+}
+
+/// Payloads are opaque to the database but must be a JSON object of sane size.
+fn check_payload(data: &str) -> Result<()> {
+    if data.len() > MAX_PAYLOAD_BYTES {
+        return Err(invalid("That entry is too large to save."));
+    }
+    match serde_json::from_str::<serde_json::Value>(data) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(invalid("That entry isn't valid.")),
+    }
+}
+
+pub fn get_person(db_path: &Path) -> Result<Option<String>> {
+    let conn = Connection::open(db_path)?;
+    match conn.query_row("SELECT data FROM person WHERE id = 1", [], |row| row.get(0)) {
+        Ok(data) => Ok(Some(data)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn save_person(db_path: &Path, data: &str) -> Result<()> {
+    check_payload(data)?;
+    let conn = Connection::open(db_path)?;
+    conn.execute(
+        "INSERT INTO person (id, data, updated_at) VALUES (1, ?1, ?2)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+        params![data, chrono::Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub fn list_library_items(db_path: &Path) -> Result<Vec<LibraryItem>> {
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, data, created_at, updated_at FROM library_items ORDER BY kind, updated_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(LibraryItem {
+            id: row.get(0)?,
+            kind: row.get(1)?,
+            data: row.get(2)?,
+            created_at: row.get(3)?,
+            updated_at: row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Creates the item when `id` is None, otherwise updates it.
+pub fn save_library_item(db_path: &Path, id: Option<String>, kind: &str, data: &str) -> Result<LibraryItem> {
+    if !LIBRARY_KINDS.contains(&kind) {
+        return Err(invalid("Unknown kind of entry."));
+    }
+    check_payload(data)?;
+    let conn = Connection::open(db_path)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    conn.execute(
+        "INSERT INTO library_items (id, kind, data, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+         WHERE library_items.kind = excluded.kind",
+        params![&id, kind, data, &now],
+    )?;
+    conn.query_row(
+        "SELECT id, kind, data, created_at, updated_at FROM library_items WHERE id = ?1",
+        [&id],
+        |row| {
+            Ok(LibraryItem {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                data: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        },
+    )
+}
+
+pub fn delete_library_item(db_path: &Path, id: &str) -> Result<()> {
+    let conn = Connection::open(db_path)?;
+    let changed = conn.execute("DELETE FROM library_items WHERE id = ?1", [id])?;
+    if changed == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    Ok(())
+}
+
+pub fn list_profiles(db_path: &Path) -> Result<Vec<Profile>> {
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare("SELECT id, name, data, created_at, updated_at FROM profiles ORDER BY name COLLATE NOCASE")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Profile {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            data: row.get(2)?,
+            created_at: row.get(3)?,
+            updated_at: row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn save_profile(db_path: &Path, id: Option<String>, name: &str, data: &str) -> Result<Profile> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 100 {
+        return Err(invalid("A profile needs a name of up to 100 characters."));
+    }
+    check_payload(data)?;
+    let conn = Connection::open(db_path)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    conn.execute(
+        "INSERT INTO profiles (id, name, data, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, data = excluded.data, updated_at = excluded.updated_at",
+        params![&id, name, data, &now],
+    )?;
+    conn.query_row(
+        "SELECT id, name, data, created_at, updated_at FROM profiles WHERE id = ?1",
+        [&id],
+        |row| {
+            Ok(Profile {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                data: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        },
+    )
+}
+
+pub fn delete_profile(db_path: &Path, id: &str) -> Result<()> {
+    let conn = Connection::open(db_path)?;
+    let changed = conn.execute("DELETE FROM profiles WHERE id = ?1", [id])?;
+    if changed == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     Ok(())
 }
 
@@ -366,6 +563,74 @@ mod tests {
     fn temp_db_path() -> std::path::PathBuf {
         let unique = uuid::Uuid::new_v4().to_string();
         std::env::temp_dir().join(format!("vitae_test_{}.db", unique))
+    }
+
+    #[test]
+    fn test_person_is_a_single_shared_row() {
+        let db = temp_db_path();
+        init_database(&db).unwrap();
+        assert_eq!(get_person(&db).unwrap(), None);
+        save_person(&db, r#"{"name":"Jane Doe"}"#).unwrap();
+        save_person(&db, r#"{"name":"Jane Q. Doe"}"#).unwrap();
+        assert_eq!(get_person(&db).unwrap().unwrap(), r#"{"name":"Jane Q. Doe"}"#);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn test_payloads_are_validated() {
+        let db = temp_db_path();
+        init_database(&db).unwrap();
+        assert!(save_person(&db, "not json").is_err());
+        assert!(save_person(&db, "[1,2]").is_err());
+        assert!(save_person(&db, &format!(r#"{{"x":"{}"}}"#, "a".repeat(MAX_PAYLOAD_BYTES))).is_err());
+        assert!(save_library_item(&db, None, "experience", "nope").is_err());
+        assert!(save_library_item(&db, None, "hobby", "{}").is_err());
+        assert!(save_profile(&db, None, "   ", "{}").is_err());
+        assert!(save_profile(&db, None, &"n".repeat(101), "{}").is_err());
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn test_library_item_lifecycle() {
+        let db = temp_db_path();
+        init_database(&db).unwrap();
+        let created = save_library_item(&db, None, "experience", r#"{"role":"Engineer"}"#).unwrap();
+        assert_eq!(created.kind, "experience");
+        let project = save_library_item(&db, None, "project", r#"{"name":"Vitae"}"#).unwrap();
+
+        let updated = save_library_item(&db, Some(created.id.clone()), "experience", r#"{"role":"Senior Engineer"}"#).unwrap();
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.created_at, created.created_at);
+        assert!(updated.data.contains("Senior"));
+
+        // An id can't be reused to change what kind of entry it is.
+        let hijack = save_library_item(&db, Some(project.id.clone()), "experience", r#"{"role":"x"}"#).unwrap();
+        assert_eq!(hijack.kind, "project");
+        assert!(hijack.data.contains("Vitae"));
+
+        let all = list_library_items(&db).unwrap();
+        assert_eq!(all.len(), 2);
+        delete_library_item(&db, &created.id).unwrap();
+        assert_eq!(list_library_items(&db).unwrap().len(), 1);
+        assert!(delete_library_item(&db, &created.id).is_err());
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn test_profile_lifecycle() {
+        let db = temp_db_path();
+        init_database(&db).unwrap();
+        let b = save_profile(&db, None, "Backend", r#"{"headline":"Backend Engineer"}"#).unwrap();
+        save_profile(&db, None, "Analyst", "{}").unwrap();
+        let names: Vec<_> = list_profiles(&db).unwrap().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, vec!["Analyst", "Backend"]);
+        let renamed = save_profile(&db, Some(b.id.clone()), "  Platform ", r#"{"headline":"x"}"#).unwrap();
+        assert_eq!(renamed.name, "Platform");
+        assert_eq!(renamed.id, b.id);
+        delete_profile(&db, &b.id).unwrap();
+        assert_eq!(list_profiles(&db).unwrap().len(), 1);
+        assert!(delete_profile(&db, &b.id).is_err());
+        let _ = std::fs::remove_file(&db);
     }
 
     #[test]

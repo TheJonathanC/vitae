@@ -6,7 +6,7 @@ mod latex;
 mod tex_setup;
 
 use base64::Engine as _;
-use db::{init_database, Document, Template};
+use db::{init_database, Document, LibraryItem, Profile, Template};
 use latex::CompilationResult;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -297,6 +297,67 @@ async fn remove_tex_package(name: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+fn db_error(e: rusqlite::Error) -> String {
+    match e {
+        rusqlite::Error::InvalidParameterName(message) => message,
+        rusqlite::Error::QueryReturnedNoRows => "That entry no longer exists.".to_string(),
+        other => other.to_string(),
+    }
+}
+
+#[tauri::command]
+fn get_person(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    db::get_person(&db_path(&app)?).map_err(db_error)
+}
+
+#[tauri::command]
+fn save_person(app: tauri::AppHandle, data: String) -> Result<(), String> {
+    db::save_person(&db_path(&app)?, &data).map_err(db_error)
+}
+
+#[tauri::command]
+fn list_library_items(app: tauri::AppHandle) -> Result<Vec<LibraryItem>, String> {
+    db::list_library_items(&db_path(&app)?).map_err(db_error)
+}
+
+#[tauri::command]
+fn save_library_item(
+    app: tauri::AppHandle,
+    id: Option<String>,
+    kind: String,
+    data: String,
+) -> Result<LibraryItem, String> {
+    if let Some(id) = &id {
+        validate_id(id)?;
+    }
+    db::save_library_item(&db_path(&app)?, id, &kind, &data).map_err(db_error)
+}
+
+#[tauri::command]
+fn delete_library_item(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    validate_id(&id)?;
+    db::delete_library_item(&db_path(&app)?, &id).map_err(db_error)
+}
+
+#[tauri::command]
+fn list_profiles(app: tauri::AppHandle) -> Result<Vec<Profile>, String> {
+    db::list_profiles(&db_path(&app)?).map_err(db_error)
+}
+
+#[tauri::command]
+fn save_profile(app: tauri::AppHandle, id: Option<String>, name: String, data: String) -> Result<Profile, String> {
+    if let Some(id) = &id {
+        validate_id(id)?;
+    }
+    db::save_profile(&db_path(&app)?, id, &name, &data).map_err(db_error)
+}
+
+#[tauri::command]
+fn delete_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    validate_id(&id)?;
+    db::delete_profile(&db_path(&app)?, &id).map_err(db_error)
+}
+
 fn get_update_endpoint(channel: &str) -> &'static str {
     if channel.eq_ignore_ascii_case("beta") {
         "https://github.com/TheJonathanC/vitae/releases/download/latest-beta/latest-beta.json"
@@ -431,7 +492,15 @@ fn main() {
             get_all_templates,
             get_template,
             create_template,
-            delete_template
+            delete_template,
+            get_person,
+            save_person,
+            list_library_items,
+            save_library_item,
+            delete_library_item,
+            list_profiles,
+            save_profile,
+            delete_profile
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
