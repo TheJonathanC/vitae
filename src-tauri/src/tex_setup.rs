@@ -195,6 +195,18 @@ fn install_miktex_inner(
     if !run(install, SETUP_STEP_TIMEOUT, "the MiKTeX installation")?.success {
         return Err("MiKTeX couldn't be installed.".into());
     }
+
+    // MiKTeX won't install missing packages on the fly until the package database
+    // has been refreshed once and auto-install is on. Best effort: Vitae also
+    // installs packages itself if these don't take.
+    emit("configure", "Finishing setup…");
+    let bin_dir = install_dir.join("miktex").join("bin").join("x64");
+    let mut mpm = create_silent_command(bin_dir.join("mpm.exe"));
+    mpm.args(["--update-db".to_string(), format!("--repository={}", MIKTEX_REPOSITORY)]);
+    let _ = run(mpm, SMALL_STEP_TIMEOUT, "the package database update");
+    let mut initexmf = create_silent_command(bin_dir.join("initexmf.exe"));
+    initexmf.arg("--set-config-value=[MPM]AutoInstall=1");
+    let _ = run(initexmf, SMALL_STEP_TIMEOUT, "the MiKTeX configuration");
     Ok(())
 }
 

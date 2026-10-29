@@ -10,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -21,7 +22,7 @@ pub const COMPILE_TIMEOUT: Duration = Duration::from_secs(120);
 pub const LATEX_TEMP_EXTENSIONS: &[&str] = &[
     "tex", "pdf", "aux", "log", "out", "toc", "nav", "snm",
     "fls", "synctex.gz", "bbl", "blg", "idx", "ind", "ilg", "lot", "lof",
-    "bcf", "run.xml",
+    "bcf", "run.xml", "stderr",
 ];
 
 /// Auxiliary files that are read back on the next run and can therefore carry
@@ -217,6 +218,7 @@ pub fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<PassOutpu
 /// a long chain of them still builds but a loop can't run away.
 const MAX_AUTO_INSTALLS: usize = 8;
 const TLMGR_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
+pub const MIKTEX_REPOSITORY: &str = "https://mirrors.ctan.org/systems/win32/miktex/tm/packages/";
 const TLMGR_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 const TEX_SUPPORT_EXTENSIONS: &[&str] = &["sty", "cls", "clo", "def", "fd", "cfg"];
 
@@ -242,7 +244,7 @@ fn is_plain_tex_file(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-'))
 }
 
-fn is_plain_package_name(name: &str) -> bool {
+pub fn is_plain_package_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 100
         && !name.starts_with(['-', '.'])
@@ -268,12 +270,106 @@ pub fn parse_tlmgr_search(output: &str, file: &str) -> Option<String> {
     None
 }
 
-fn tlmgr_path(bin: &LatexBinary) -> PathBuf {
-    let name = if cfg!(windows) { "tlmgr.bat" } else { "tlmgr" };
+/// A helper tool (`tlmgr`, `mpm`) that ships next to `pdflatex`.
+fn tool_path(bin: &LatexBinary, stem: &str) -> PathBuf {
+    let name = match (cfg!(windows), stem) {
+        (true, "tlmgr") => "tlmgr.bat".to_string(),
+        (true, _) => format!("{}.exe", stem),
+        (false, _) => stem.to_string(),
+    };
     match bin.path.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir.join(name),
         _ => PathBuf::from(name),
     }
+}
+
+fn tlmgr_path(bin: &LatexBinary) -> PathBuf {
+    tool_path(bin, "tlmgr")
+}
+
+/// Set once the user's MiKTeX package database has been refreshed this session.
+/// MiKTeX won't install packages on the fly until that has happened once.
+static MIKTEX_DB_REFRESHED: AtomicBool = AtomicBool::new(false);
+
+/// Runs a tool, keeping what it writes to stderr (MiKTeX reports problems there).
+fn run_tool_logged(
+    tool: &Path,
+    args: &[String],
+    timeout: Duration,
+    log: &Path,
+) -> Result<(PassOutput, String), String> {
+    let mut cmd = create_silent_command(tool);
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped());
+    match fs::File::create(log) {
+        Ok(file) => cmd.stderr(Stdio::from(file)),
+        Err(_) => cmd.stderr(Stdio::null()),
+    };
+    let out = run_with_timeout(cmd, timeout).map_err(|e| match e {
+        RunError::TimedOut => format!("{} timed out", tool.display()),
+        RunError::Spawn(msg) => format!("couldn't run {} ({})", tool.display(), msg),
+    })?;
+    let stderr = fs::read_to_string(log).unwrap_or_default();
+    Ok((out, stderr))
+}
+
+pub fn mpm_update_db_args() -> Vec<String> {
+    vec!["--update-db".into(), format!("--repository={}", MIKTEX_REPOSITORY)]
+}
+
+pub fn mpm_install_args(package: &str) -> Vec<String> {
+    vec![format!("--install={}", package), format!("--repository={}", MIKTEX_REPOSITORY)]
+}
+
+/// The lines of MiKTeX's own output that explain why it couldn't install something.
+pub fn miktex_diagnostics(output: &str) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for line in output.lines().map(str::trim) {
+        let lower = line.to_lowercase();
+        let relevant = lower.contains("issue")
+            || lower.contains("update")
+            || lower.contains("repository")
+            || lower.contains("administrator")
+            || lower.contains("not installed")
+            || lower.contains("cannot")
+            || lower.contains("can't")
+            || lower.contains("failed");
+        if relevant && !line.is_empty() && !lines.iter().any(|l| l == line) {
+            lines.push(line.chars().take(300).collect());
+        }
+        if lines.len() == 3 {
+            break;
+        }
+    }
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join(" "))
+    }
+}
+
+/// MiKTeX's fallback when its on-the-fly installer gave up: refresh the package
+/// database once, then install the package with `mpm`. Returns the package name.
+fn install_with_mpm(bin: &LatexBinary, file: &str, log_dir: &Path, id: &str) -> Result<String, String> {
+    let package = file.rsplit_once('.').map_or(file, |(stem, _)| stem).to_string();
+    if !is_plain_package_name(&package) {
+        return Err("the package name isn't valid".into());
+    }
+    let mpm = tool_path(bin, "mpm");
+    let log = log_dir.join(format!("{}.stderr", id));
+    if !MIKTEX_DB_REFRESHED.load(Ordering::SeqCst) {
+        if let Ok((out, _)) = run_tool_logged(&mpm, &mpm_update_db_args(), TLMGR_INSTALL_TIMEOUT, &log) {
+            if out.success {
+                MIKTEX_DB_REFRESHED.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+    let (out, stderr) = run_tool_logged(&mpm, &mpm_install_args(&package), TLMGR_INSTALL_TIMEOUT, &log)?;
+    if out.success {
+        return Ok(package);
+    }
+    let detail = miktex_diagnostics(&format!("{}\n{}", stderr, out.stdout))
+        .unwrap_or_else(|| format!("mpm couldn't install `{}`", package));
+    Err(detail)
 }
 
 fn run_tlmgr(tlmgr: &Path, args: &[&str], timeout: Duration) -> Result<PassOutput, String> {
@@ -311,9 +407,10 @@ fn install_missing_file(bin: &LatexBinary, file: &str) -> Result<String, String>
 pub fn missing_package_message(file: &str, bin: &LatexBinary, install_error: Option<&str>) -> String {
     let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
     if bin.is_miktex {
+        let why = install_error.map(|e| format!(" MiKTeX said: {}", e)).unwrap_or_default();
         format!(
-            "The LaTeX package file `{}` is missing and MiKTeX couldn't install it automatically. Check your internet connection and compile again; if it keeps failing, install `{}` in MiKTeX Console under Packages.",
-            file, stem
+            "The LaTeX package file `{}` is missing and Vitae couldn't install it automatically.{} To fix it once, open MiKTeX Console, choose Updates and then Check for updates; or install `{}` under Packages. Then compile again.",
+            file, why, stem
         )
     } else {
         let why = install_error.map(|e| format!(" ({})", e)).unwrap_or_default();
@@ -397,8 +494,16 @@ pub fn compile(
 
     fs::write(&tex_file, content).map_err(|e| format!("Failed to write tex file: {}", e))?;
 
+    // MiKTeX explains installer problems on stderr, which is otherwise discarded.
+    let err_log = temp_dir.join(format!("{}.stderr", id));
     let run_pass = || -> Result<PassOutput, String> {
-        run_with_timeout(sandboxed_command(bin, temp_dir, &tex_name), timeout).map_err(|e| match e {
+        let mut cmd = sandboxed_command(bin, temp_dir, &tex_name);
+        if bin.is_miktex {
+            if let Ok(file) = fs::File::create(&err_log) {
+                cmd.stderr(Stdio::from(file));
+            }
+        }
+        run_with_timeout(cmd, timeout).map_err(|e| match e {
             RunError::TimedOut => format!(
                 "Compilation timed out after {} seconds. Check for an infinite loop (e.g. a macro that calls itself); if LaTeX is downloading packages, try again.",
                 timeout.as_secs()
@@ -413,13 +518,19 @@ pub fn compile(
     // Pass 1 is incremental: existing .aux/.out are kept so most edits need one pass.
     let mut pass = run_pass()?;
 
-    // TeX Live can't fetch packages mid-run (MiKTeX does, via --enable-installer):
-    // install whatever the log says is missing, then compile again.
+    // Install whatever the log says is missing, then compile again. MiKTeX normally
+    // does this itself (--enable-installer); when it couldn't, ask mpm directly.
+    // TeX Live can't fetch packages mid-run at all, so it always takes this path.
     let mut installed: Vec<String> = Vec::new();
     let mut install_error: Option<String> = None;
-    while !pass.success && !bin.is_miktex && installed.len() < MAX_AUTO_INSTALLS {
+    while !pass.success && installed.len() < MAX_AUTO_INSTALLS {
         let Some(file) = parse_missing_file(&pass.stdout) else { break };
-        match install_missing_file(bin, &file) {
+        let attempt = if bin.is_miktex {
+            install_with_mpm(bin, &file, temp_dir, id)
+        } else {
+            install_missing_file(bin, &file)
+        };
+        match attempt {
             Ok(package) if !installed.contains(&package) => {
                 installed.push(package);
                 pass = run_pass()?;
@@ -452,11 +563,15 @@ pub fn compile(
     let mut errors = parse_latex_errors(&pass.stdout);
     if !pass.success {
         if let Some(file) = parse_missing_file(&pass.stdout) {
+            // Prefer what mpm said; otherwise whatever MiKTeX printed during the compile.
+            let reason = install_error
+                .clone()
+                .or_else(|| fs::read_to_string(&err_log).ok().and_then(|log| miktex_diagnostics(&log)));
             errors.insert(
                 0,
                 LatexError {
                     line: None,
-                    message: missing_package_message(&file, bin, install_error.as_deref()),
+                    message: missing_package_message(&file, bin, reason.as_deref()),
                     severity: "error".to_string(),
                 },
             );
@@ -813,6 +928,43 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         assert_eq!(tlmgr_path(&bare), PathBuf::from(name));
         let full = LatexBinary { path: PathBuf::from("/usr/local/texlive/bin/pdflatex"), is_miktex: false };
         assert_eq!(tlmgr_path(&full), PathBuf::from("/usr/local/texlive/bin").join(name));
+    }
+
+    #[test]
+    fn test_mpm_args() {
+        let install = mpm_install_args("sourcesanspro");
+        assert_eq!(install[0], "--install=sourcesanspro");
+        assert!(install[1].starts_with("--repository=https://"));
+        assert_eq!(mpm_update_db_args()[0], "--update-db");
+    }
+
+    #[test]
+    fn test_miktex_diagnostics_picks_out_the_reason() {
+        let stderr = "\nmiktex-pdftex: major issue: So far, you have not checked for updates as a MiKTeX user.\nmiktex-pdftex: major issue: So far, you have not checked for updates as a MiKTeX user.\nsome unrelated line\nmiktex-pdftex: the installer failed: repository not reachable\n";
+        let found = miktex_diagnostics(stderr).unwrap();
+        assert!(found.contains("have not checked for updates"));
+        assert!(found.contains("repository not reachable"));
+        assert_eq!(found.matches("have not checked for updates").count(), 1, "duplicates are dropped");
+        assert!(!found.contains("unrelated"));
+        assert_eq!(miktex_diagnostics("nothing useful here\n"), None);
+        assert_eq!(miktex_diagnostics(""), None);
+    }
+
+    #[test]
+    fn test_miktex_message_includes_what_miktex_said_and_the_one_time_fix() {
+        let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
+        let msg = missing_package_message("sourcesanspro.sty", &miktex, Some("major issue: not checked for updates"));
+        assert!(msg.contains("MiKTeX said: major issue: not checked for updates"));
+        assert!(msg.contains("Check for updates"));
+        assert!(!missing_package_message("x.sty", &miktex, None).contains("MiKTeX said"));
+    }
+
+    #[test]
+    fn test_tool_path_sits_next_to_pdflatex() {
+        let bin = LatexBinary { path: PathBuf::from("/opt/miktex/bin/pdflatex"), is_miktex: true };
+        let mpm = tool_path(&bin, "mpm");
+        assert_eq!(mpm.parent(), Some(Path::new("/opt/miktex/bin")));
+        assert!(mpm.file_name().unwrap().to_string_lossy().starts_with("mpm"));
     }
 
     #[test]
