@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Upper bound for a single pdflatex pass. Generous because MiKTeX may download
 /// missing packages on first use, but finite so an infinite TeX loop cannot
@@ -168,6 +168,7 @@ pub fn sandboxed_command(bin: &LatexBinary, work_dir: &Path, tex_name: &str) -> 
 #[derive(Debug)]
 pub struct PassOutput {
     pub success: bool,
+    pub code: Option<i32>,
     pub stdout: String,
 }
 
@@ -210,6 +211,7 @@ pub fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<PassOutpu
         .unwrap_or_default();
     Ok(PassOutput {
         success: status.success(),
+        code: status.code(),
         stdout,
     })
 }
@@ -421,6 +423,37 @@ pub fn missing_package_message(file: &str, bin: &LatexBinary, install_error: Opt
     }
 }
 
+/// True when `pdf` was written during this compile (the clock slack covers coarse
+/// filesystem timestamps).
+fn pdf_is_fresh(pdf: &Path, started: SystemTime) -> bool {
+    let cutoff = started.checked_sub(Duration::from_secs(2)).unwrap_or(started);
+    fs::metadata(pdf)
+        .and_then(|m| m.modified())
+        .map(|modified| modified >= cutoff)
+        .unwrap_or(false)
+}
+
+/// Explains a pdflatex run that failed (non-zero exit) without printing a LaTeX
+/// error: the exit code, anything MiKTeX said, and the last lines of output.
+pub fn silent_failure_message(code: Option<i32>, stdout: &str, notes: Option<&str>, pdf_produced: bool) -> String {
+    let exit = code.map_or("an unknown code".to_string(), |c| format!("code {}", c));
+    let tail: Vec<&str> = stdout.lines().map(str::trim).filter(|l| !l.is_empty()).rev().take(5).collect();
+    let tail: String = tail.into_iter().rev().collect::<Vec<_>>().join(" | ");
+    let mut message = if pdf_produced {
+        format!("pdflatex exited with {} but produced a PDF and reported no errors, so the PDF is shown.", exit)
+    } else {
+        format!("pdflatex exited with {} without reporting a LaTeX error and produced no PDF.", exit)
+    };
+    if let Some(notes) = notes {
+        message.push_str(&format!(" MiKTeX said: {}", notes));
+    }
+    if !pdf_produced && !tail.is_empty() {
+        let tail: String = tail.chars().rev().take(500).collect::<Vec<_>>().into_iter().rev().collect();
+        message.push_str(&format!(" Last output: {}", tail));
+    }
+    message
+}
+
 pub fn check_needs_rerun(output: &str) -> bool {
     let lower = output.to_lowercase();
     lower.contains("rerun to ")
@@ -493,6 +526,7 @@ pub fn compile(
     }
 
     fs::write(&tex_file, content).map_err(|e| format!("Failed to write tex file: {}", e))?;
+    let started = SystemTime::now();
 
     // MiKTeX explains installer problems on stderr, which is otherwise discarded.
     let err_log = temp_dir.join(format!("{}.stderr", id));
@@ -577,6 +611,20 @@ pub fn compile(
             );
         }
     }
+
+    // A non-zero exit with no LaTeX error is not necessarily a failed build (MiKTeX
+    // does this, for instance). Keep a freshly written PDF and say what happened;
+    // otherwise explain the failure instead of showing nothing.
+    let silent_failure = !pass.success && !errors.iter().any(|e| e.severity == "error");
+    let fresh_pdf = silent_failure && pdf_is_fresh(&pdf_file, started);
+    if silent_failure {
+        let notes = fs::read_to_string(&err_log).ok().and_then(|log| miktex_diagnostics(&log));
+        errors.push(LatexError {
+            line: None,
+            message: silent_failure_message(pass.code, &pass.stdout, notes.as_deref(), fresh_pdf),
+            severity: if fresh_pdf { "warning" } else { "error" }.to_string(),
+        });
+    }
     let has_errors = errors.iter().any(|e| e.severity == "error");
 
     if !pdf_file.exists() {
@@ -595,7 +643,7 @@ pub fn compile(
         });
     }
 
-    let success = pass.success && !has_errors;
+    let success = (pass.success || fresh_pdf) && !has_errors;
     if success {
         LAST_COMPILE_HASH
             .lock()
@@ -928,6 +976,77 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         assert_eq!(tlmgr_path(&bare), PathBuf::from(name));
         let full = LatexBinary { path: PathBuf::from("/usr/local/texlive/bin/pdflatex"), is_miktex: false };
         assert_eq!(tlmgr_path(&full), PathBuf::from("/usr/local/texlive/bin").join(name));
+    }
+
+    #[test]
+    fn test_silent_failure_message() {
+        let out = "line one\n\n(some.sty)\nlast line\n";
+        let kept = silent_failure_message(Some(1), out, None, true);
+        assert!(kept.contains("code 1") && kept.contains("the PDF is shown"));
+        assert!(!kept.contains("Last output"));
+        let lost = silent_failure_message(None, out, Some("major issue: x"), false);
+        assert!(lost.contains("unknown code") && lost.contains("produced no PDF"));
+        assert!(lost.contains("MiKTeX said: major issue: x"));
+        assert!(lost.contains("line one | (some.sty) | last line"));
+    }
+
+    /// A stand-in pdflatex: prints a warning, optionally writes the PDF, and exits with 1.
+    #[cfg(unix)]
+    fn fake_pdflatex(dir: &Path, writes_pdf: bool) -> LatexBinary {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("fake-pdflatex");
+        let write = if writes_pdf { "echo pdf > \"${last%.tex}.pdf\"" } else { "true" };
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nfor last; do :; done\n{}\necho 'Package fancyhdr Warning: \\footskip is too small (0.0pt):'\nexit 1\n",
+                write
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        LatexBinary { path: script, is_miktex: false }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_keeps_a_fresh_pdf_when_exit_code_is_nonzero_without_errors() {
+        let dir = std::env::temp_dir().join(format!("vitae-silent-ok-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bin = fake_pdflatex(&dir, true);
+        let result = compile(&bin, &dir, "silent-ok", "x", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "a fresh PDF with no LaTeX errors counts as a build");
+        assert!(result.pdf_path.is_some());
+        assert!(result.errors.iter().all(|e| e.severity == "warning"));
+        assert!(result.errors.iter().any(|e| e.message.contains("exited with code 1") && e.message.contains("PDF is shown")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_explains_a_silent_failure_with_no_pdf() {
+        let dir = std::env::temp_dir().join(format!("vitae-silent-fail-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bin = fake_pdflatex(&dir, false);
+        let result = compile(&bin, &dir, "silent-fail", "x", Duration::from_secs(10)).unwrap();
+        assert!(!result.success);
+        let message = &result.errors.iter().find(|e| e.severity == "error").expect("an error entry").message;
+        assert!(message.contains("exited with code 1") && message.contains("produced no PDF"));
+        assert!(message.contains("footskip"), "the log tail is included: {}", message);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_pdf_is_fresh() {
+        let dir = std::env::temp_dir().join(format!("vitae-fresh-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let pdf = dir.join("a.pdf");
+        assert!(!pdf_is_fresh(&pdf, SystemTime::now()), "a missing file is never fresh");
+        fs::write(&pdf, b"x").unwrap();
+        assert!(pdf_is_fresh(&pdf, SystemTime::now()));
+        let later = SystemTime::now() + Duration::from_secs(3600);
+        assert!(!pdf_is_fresh(&pdf, later), "a PDF from before the compile started is stale");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
