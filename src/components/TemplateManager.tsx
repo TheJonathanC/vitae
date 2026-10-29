@@ -1,26 +1,51 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { Template, ResumeData } from "../types";
+import { Template, ResumePersonalInfo } from "../types";
+import { useDialog } from "../hooks/useDialog";
 import { convertRawLatexToTemplate, extractFieldsFromTemplate } from "../utils/templateEngine";
-import {
-  IconLayers,
-  IconUpload,
-  IconPlus,
-  IconTrash,
-  IconFile,
-  IconSearch,
-  IconX,
-  IconCheck,
-} from "./Icons";
+import { IconUpload, IconTrash, IconX, IconCheck, IconChevronLeft } from "./Icons";
 
 interface TemplateManagerProps {
   templates: Template[];
   currentTemplateId: string | null;
-  onSelectTemplate: (template: Template) => void;
+  /**
+   * Applies a template. For a just-imported template, `importedPersonal` holds
+   * contact details detected in the file (applied in the same update, so the
+   * template switch and the data merge can't race each other).
+   */
+  onSelectTemplate: (template: Template, importedPersonal?: Partial<ResumePersonalInfo>) => void;
   onTemplatesUpdated: () => void;
   onClose: () => void;
-  onImportDataIntoResume?: (extractedData: Partial<ResumeData>) => void;
 }
+
+const SECTION_LABELS: Record<string, string> = {
+  experience: "experience",
+  education: "education",
+  projects: "projects",
+  skills: "skills",
+  customSections: "additional sections",
+};
+
+const DETECTED_LABELS: Record<string, string> = {
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  github: "GitHub",
+  linkedin: "LinkedIn",
+};
+
+function describeSections(content: string): string {
+  const analysis = extractFieldsFromTemplate(content);
+  const sections = analysis.detectedSections.map((sec) => SECTION_LABELS[sec] || sec);
+  if (sections.length === 0) return "Fixed layout; only your details come from the form.";
+  const list =
+    sections.length === 1
+      ? sections[0]
+      : `${sections.slice(0, -1).join(", ")} and ${sections[sections.length - 1]}`;
+  return `Shows ${list}.`;
+}
+
+type View = { kind: "list" } | { kind: "import" } | { kind: "source"; template: Template };
 
 export const TemplateManager: React.FC<TemplateManagerProps> = ({
   templates,
@@ -28,73 +53,64 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
   onSelectTemplate,
   onTemplatesUpdated,
   onClose,
-  onImportDataIntoResume,
 }) => {
-  const [activeTab, setActiveTab] = useState<"gallery" | "import">("gallery");
-  const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null);
+  const [view, setView] = useState<View>({ kind: "list" });
 
   // Import form state
   const [importName, setImportName] = useState("");
-  const [importDesc, setImportDesc] = useState("");
   const [importContent, setImportContent] = useState("");
-  const [importExtractedData, setImportExtractedData] = useState<Partial<ResumeData> | null>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importExtractedData, setImportExtractedData] = useState<Partial<ResumePersonalInfo> | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (viewingTemplate) {
-          setViewingTemplate(null);
-        } else {
-          onClose();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [viewingTemplate, onClose]);
+  // Escape steps back to the list first, then closes.
+  const dialogRef = useDialog<HTMLDivElement>(() => {
+    if (view.kind !== "list") {
+      setView({ kind: "list" });
+    } else {
+      onClose();
+    }
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const baseName = file.name.replace(/\.[^/.]+$/, "");
-    setImportName(baseName);
-    setImportDesc(`Imported custom template from ${file.name}`);
+    setImportName(file.name.replace(/\.[^/.]+$/, ""));
+    setImportFileName(file.name);
     setImportError(null);
-    setImportSuccess(null);
+    setView({ kind: "import" });
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
       if (!text) {
-        setImportError("Uploaded file is empty");
+        setImportError("That file is empty. Choose a .tex file with a LaTeX document in it.");
         return;
       }
 
-      // Convert or analyze raw LaTeX
       const { templateContent, extractedData } = convertRawLatexToTemplate(text);
       setImportContent(templateContent);
-      setImportExtractedData(extractedData);
-      setActiveTab("import");
+      setImportExtractedData(extractedData.personal ?? null);
     };
     reader.onerror = () => {
-      setImportError("Failed to read file");
+      setImportError("The file couldn't be read. Try choosing it again.");
     };
     reader.readAsText(file);
+    // Allow choosing the same file again later
+    e.target.value = "";
   };
 
   const handleSaveImportedTemplate = async () => {
     if (!importName.trim()) {
-      setImportError("Please provide a template name");
+      setImportError("Give the template a name.");
       return;
     }
     if (!importContent.trim()) {
-      setImportError("Template content is empty");
+      setImportError("The template is empty.");
       return;
     }
 
@@ -104,63 +120,65 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
     try {
       const newTemplate = await invoke<Template>("create_template", {
         name: importName.trim(),
-        description: importDesc.trim() || "User imported template",
+        description: importFileName ? `Imported from ${importFileName}` : "Imported template",
         content: importContent,
       });
 
-      setImportSuccess(`Template "${newTemplate.name}" successfully imported and saved!`);
       onTemplatesUpdated();
-
-      // Optionally offer to apply new template
-      onSelectTemplate(newTemplate);
-
-      if (
-        onImportDataIntoResume &&
-        importExtractedData &&
-        importExtractedData.personal?.name
-      ) {
-        onImportDataIntoResume(importExtractedData);
-      }
-
-      setTimeout(() => {
-        onClose();
-      }, 1200);
+      onSelectTemplate(newTemplate, importExtractedData ?? undefined);
+      onClose();
     } catch (err) {
-      setImportError(`Failed to save template: ${err}`);
+      setImportError(`The template couldn't be saved: ${err}`);
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteTemplate = async (templateId: string, templateName: string) => {
-    if (!confirm(`Are you sure you want to delete template "${templateName}"?`)) return;
+    if (!confirm(`Delete the template "${templateName}"? Resumes using it switch to the default template.`)) return;
 
     try {
       await invoke("delete_template", { id: templateId });
       onTemplatesUpdated();
     } catch (err) {
-      alert(`Failed to delete template: ${err}`);
+      alert(`The template couldn't be deleted: ${err}`);
     }
   };
 
+  const detected = importExtractedData
+    ? Object.entries(importExtractedData).filter(([, value]) => value)
+    : [];
+
   return (
-    <div
-      className="modal-overlay"
-      data-testid="template-manager-modal"
-      onClick={onClose}
-    >
+    <div className="dialog-backdrop" data-testid="template-manager-modal" onClick={onClose}>
       <div
-        className="modal-content template-modal-content"
+        ref={dialogRef}
+        className="dialog dialog-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="template-manager-title"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
-          <h2>Resume Templates</h2>
-          <button
-            className="btn-close"
-            onClick={onClose}
-            title="Close modal"
-            aria-label="Close"
-          >
+        <div className="dialog-head">
+          {view.kind !== "list" && (
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setView({ kind: "list" })}
+              aria-label="Back to templates"
+            >
+              <IconChevronLeft size={18} />
+            </button>
+          )}
+          <h2 id="template-manager-title">
+            {view.kind === "list"
+              ? "Templates"
+              : view.kind === "import"
+                ? "Import a template"
+                : view.template.name}
+          </h2>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
             <IconX size={18} />
           </button>
         </div>
@@ -169,247 +187,169 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
           ref={fileInputRef}
           type="file"
           accept=".tex,text/plain"
-          style={{ display: "none" }}
+          hidden
           onChange={handleFileChange}
           data-testid="template-file-input"
         />
 
-        {/* Modal Navigation Tabs */}
-        <div className="template-modal-tabs">
-          <button
-            className={`tab-btn ${activeTab === "gallery" ? "active" : ""}`}
-            onClick={() => setActiveTab("gallery")}
-          >
-            <IconLayers size={14} />
-            <span>Gallery ({templates.length})</span>
-          </button>
-          <button
-            className={`tab-btn ${activeTab === "import" ? "active" : ""}`}
-            onClick={() => setActiveTab("import")}
-          >
-            <IconUpload size={14} />
-            <span>Import Custom Template</span>
-          </button>
-        </div>
-
-        {/* TAB 1: GALLERY */}
-        {activeTab === "gallery" && (
-          <div className="template-gallery">
-            <div className="gallery-header-action">
-              <p className="gallery-subtitle">
-                Select a template for your resume or bring your own LaTeX template.
+        {view.kind === "list" && (
+          <>
+            <div className="dialog-body">
+              <p className="dialog-lead">
+                The template sets the look of your PDF. Your content stays the same when you switch.
               </p>
-              <button
-                className="btn-primary"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <IconPlus size={14} />
-                <span>Upload .tex</span>
-              </button>
-            </div>
-
-            <div className="template-grid">
-              {templates.map((tpl) => {
-                const isSelected = currentTemplateId === tpl.id;
-                const analysis = extractFieldsFromTemplate(tpl.content);
-
-                return (
-                  <div
-                    key={tpl.id}
-                    className={`template-card ${isSelected ? "selected" : ""}`}
-                    data-testid={`template-card-${tpl.id}`}
-                  >
-                    <div className="template-card-header">
-                      <h3>{tpl.name}</h3>
-                      <span
-                        className={`badge ${tpl.is_builtin ? "badge-builtin" : "badge-custom"}`}
-                      >
-                        {tpl.is_builtin ? "Built-in" : "Custom"}
-                      </span>
-                    </div>
-
-                    <p className="template-description">{tpl.description}</p>
-
-                    <div className="template-features">
-                      <span className="feature-tag">
-                        Sections: {analysis.detectedSections.join(", ") || "Standard"}
-                      </span>
-                      {analysis.customVariables.length > 0 && (
-                        <span className="feature-tag custom-var-tag">
-                          +{analysis.customVariables.length} custom fields
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="template-card-actions">
-                      <button
-                        className={`btn-select ${isSelected ? "active" : ""}`}
-                        disabled={isSelected}
-                        onClick={() => {
-                          onSelectTemplate(tpl);
-                          onClose();
-                        }}
-                      >
+              <ul className="template-list">
+                {templates.map((tpl) => {
+                  const isSelected = currentTemplateId === tpl.id;
+                  return (
+                    <li
+                      key={tpl.id}
+                      className={`template-option ${isSelected ? "selected" : ""}`}
+                      data-testid={`template-card-${tpl.id}`}
+                    >
+                      <div className="template-option-text">
+                        <h3>
+                          {tpl.name}
+                          {!tpl.is_builtin && <span className="tag">Imported</span>}
+                        </h3>
+                        <p>{tpl.description}</p>
+                        <p className="template-sections">{describeSections(tpl.content)}</p>
+                      </div>
+                      <div className="template-option-actions">
                         {isSelected ? (
-                          <>
-                            <IconCheck size={14} />
-                            <span>Active Template</span>
-                          </>
+                          <span className="in-use">
+                            <IconCheck size={15} />
+                            In use
+                          </span>
                         ) : (
-                          <span>Use This Template</span>
+                          <button
+                            type="button"
+                            className="btn btn-select"
+                            onClick={() => {
+                              onSelectTemplate(tpl);
+                              onClose();
+                            }}
+                          >
+                            Use template
+                          </button>
                         )}
-                      </button>
-
-                      <button
-                        className="btn-secondary"
-                        onClick={() => setViewingTemplate(tpl)}
-                        title="View template LaTeX code"
-                      >
-                        View Code
-                      </button>
-
-                      {!tpl.is_builtin && (
                         <button
-                          className="btn-danger-icon"
-                          onClick={() => handleDeleteTemplate(tpl.id, tpl.name)}
-                          title="Delete custom template"
-                          aria-label="Delete template"
+                          type="button"
+                          className="text-button"
+                          onClick={() => setView({ kind: "source", template: tpl })}
                         >
-                          <IconTrash size={14} />
+                          View LaTeX
                         </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                        {!tpl.is_builtin && (
+                          <button
+                            type="button"
+                            className="icon-button danger"
+                            onClick={() => handleDeleteTemplate(tpl.id, tpl.name)}
+                            aria-label={`Delete template ${tpl.name}`}
+                            title="Delete template"
+                          >
+                            <IconTrash size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-          </div>
-        )}
-
-        {/* TAB 2: IMPORT TEMPLATE */}
-        {activeTab === "import" && (
-          <div className="template-import-view">
-            <div className="import-dropzone">
-              <IconFile size={36} className="dropzone-icon" />
-              <h3>Upload Your LaTeX Resume Template</h3>
-              <p>
-                Upload any <code>.tex</code> template file. Vitae automatically detects its
-                structure, extracts fields (Name, Contact, Experience, Education, Skills), and
-                saves it in your persistent templates library.
-              </p>
-              <button
-                className="btn-primary"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <IconUpload size={14} />
-                <span>Choose .tex File</span>
+            <div className="dialog-foot">
+              <p className="dialog-foot-note">Already have a resume written in LaTeX?</p>
+              <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+                <IconUpload size={15} />
+                Import .tex file
               </button>
             </div>
-
-            {importContent && (
-              <div className="import-preview-section">
-                <div className="form-group">
-                  <label>Template Name *</label>
-                  <input
-                    type="text"
-                    value={importName}
-                    onChange={(e) => setImportName(e.target.value)}
-                    placeholder="e.g. Deedy Resume or Overleaf Modern"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Description</label>
-                  <input
-                    type="text"
-                    value={importDesc}
-                    onChange={(e) => setImportDesc(e.target.value)}
-                    placeholder="Short description of this template"
-                  />
-                </div>
-
-                {importExtractedData && (
-                  <div className="extracted-notice">
-                    <h4>
-                      <IconSearch size={14} />
-                      <span>Extracted Resume Structure</span>
-                    </h4>
-                    <ul>
-                      {importExtractedData.personal?.name && (
-                        <li>
-                          <strong>Name:</strong> {importExtractedData.personal.name}
-                        </li>
-                      )}
-                      {importExtractedData.personal?.email && (
-                        <li>
-                          <strong>Email:</strong> {importExtractedData.personal.email}
-                        </li>
-                      )}
-                      {importExtractedData.personal?.phone && (
-                        <li>
-                          <strong>Phone:</strong> {importExtractedData.personal.phone}
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label>Template LaTeX Source (with placeholders)</label>
-                  <textarea
-                    rows={8}
-                    className="code-textarea"
-                    value={importContent}
-                    onChange={(e) => setImportContent(e.target.value)}
-                  />
-                </div>
-
-                {importError && <div className="error-message">{importError}</div>}
-                {importSuccess && <div className="success-message">{importSuccess}</div>}
-
-                <div className="import-actions">
-                  <button
-                    className="btn-primary"
-                    onClick={handleSaveImportedTemplate}
-                    disabled={isSaving}
-                  >
-                    {isSaving ? "Saving..." : "Save Template to Library"}
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    onClick={() => {
-                      setImportContent("");
-                      setImportExtractedData(null);
-                      setActiveTab("gallery");
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          </>
         )}
 
-        {/* SUBMODAL: View Template Source */}
-        {viewingTemplate && (
-          <div className="submodal-overlay" onClick={() => setViewingTemplate(null)}>
-            <div
-              className="submodal-content"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="submodal-header">
-                <h3>{viewingTemplate.name} - Template Source</h3>
-                <button
-                  className="btn-close"
-                  onClick={() => setViewingTemplate(null)}
-                  aria-label="Close"
-                >
-                  <IconX size={16} />
-                </button>
-              </div>
-              <pre className="template-source-preview">{viewingTemplate.content}</pre>
+        {view.kind === "import" && (
+          <>
+            <div className="dialog-body">
+              <p className="dialog-lead">
+                Vitae finds your name and contact details (email, phone, GitHub, LinkedIn) and links
+                them to the form. Everything else keeps the layout you wrote. Files that already use{" "}
+                <code>{"{{placeholders}}"}</code> are imported as they are.
+              </p>
+
+              {!importContent && !importError && <p className="muted">Reading {importFileName}…</p>}
+
+              {importContent && (
+                <div className="import-fields">
+                  <div className="field">
+                    <label htmlFor="import-template-name">Template name</label>
+                    <input
+                      id="import-template-name"
+                      type="text"
+                      value={importName}
+                      onChange={(e) => setImportName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="detected">
+                    <h3>Linked to the form</h3>
+                    {detected.length > 0 ? (
+                      <>
+                        <dl>
+                          {detected.map(([key, value]) => (
+                            <div key={key}>
+                              <dt>{DETECTED_LABELS[key] || key}</dt>
+                              <dd>{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <p className="muted">These fill in any of your details that are still empty.</p>
+                      </>
+                    ) : (
+                      <p className="muted">
+                        No contact details were found, so this template will use the file's text as written.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="import-template-source">LaTeX source</label>
+                    <textarea
+                      id="import-template-source"
+                      className="code-textarea"
+                      rows={8}
+                      value={importContent}
+                      onChange={(e) => setImportContent(e.target.value)}
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {importError && (
+                <p className="form-error" role="alert">
+                  {importError}
+                </p>
+              )}
             </div>
+            <div className="dialog-foot">
+              <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+                Choose another file
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSaveImportedTemplate}
+                disabled={isSaving || !importContent}
+              >
+                {isSaving ? "Saving…" : "Save and use template"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {view.kind === "source" && (
+          <div className="dialog-body">
+            <pre className="template-source">{view.template.content}</pre>
           </div>
         )}
       </div>

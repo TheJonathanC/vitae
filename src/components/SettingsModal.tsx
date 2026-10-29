@@ -5,7 +5,9 @@ import { open } from "@tauri-apps/api/shell";
 import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
-import { IconSettings, IconX } from "./Icons";
+import { checkGithubReleases, RELEASES_PAGE_URL } from "../utils/updates";
+import { useDialog } from "../hooks/useDialog";
+import { IconX } from "./Icons";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -23,6 +25,7 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResponse | null>(null);
   const [installing, setInstalling] = useState(false);
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
 
   useEffect(() => {
     getVersion()
@@ -49,54 +52,30 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
 
   const checkForUpdates = async () => {
     setChecking(true);
-    setStatusMessage("Checking for updates on the " + (channel === "beta" ? "Beta" : "Stable") + " channel...");
+    setStatusMessage("Checking for updates…");
     setAvailableUpdate(null);
 
     try {
       const res = await invoke<UpdateCheckResponse>("check_update_custom", { channel });
       if (res.should_update) {
         setAvailableUpdate(res);
-        setStatusMessage(`Update ${res.version} is available!`);
+        setStatusMessage(`Version ${res.version} is available.`);
       } else {
-        setStatusMessage("You are up to date! No new updates found.");
+        setStatusMessage("You have the latest version.");
       }
     } catch (err: any) {
       console.warn("Primary updater endpoint check returned:", err);
       // Fallback: If updater manifest JSON is not found, check GitHub Releases directly
       let fallbackSuccess = false;
       try {
-        const ghResponse = await fetch("https://api.github.com/repos/TheJonathanC/vitae/releases");
-        if (ghResponse.ok) {
-          const releases = await ghResponse.json();
-          const targetRelease = releases.find((r: any) => {
-            if (channel === "beta") return true;
-            return !r.prerelease;
-          });
-
-          if (targetRelease) {
-            const rawTag = targetRelease.tag_name || "";
-            const remoteVersion = rawTag.replace(/^v/, "");
-            const localVersion = version.replace(/^v/, "");
-
-            if (remoteVersion && remoteVersion !== localVersion) {
-              const exeAsset = targetRelease.assets?.find((a: any) =>
-                a.name.endsWith(".exe") || a.name.endsWith(".msi")
-              );
-              const downloadUrl = exeAsset?.browser_download_url || targetRelease.html_url;
-
-              setAvailableUpdate({
-                should_update: true,
-                version: rawTag,
-                date: targetRelease.published_at,
-                body: targetRelease.body || null,
-                download_url: downloadUrl,
-              });
-              setStatusMessage(`Update ${rawTag} is available on GitHub!`);
-              fallbackSuccess = true;
-            } else {
-              setStatusMessage(`You are up to date! (${rawTag} is the latest release)`);
-              fallbackSuccess = true;
-            }
+        const release = await checkGithubReleases(channel, version);
+        if (release) {
+          fallbackSuccess = true;
+          if (release.should_update) {
+            setAvailableUpdate(release);
+            setStatusMessage(`Version ${release.version} is available to download.`);
+          } else {
+            setStatusMessage(`You have the latest version (${release.version}).`);
           }
         }
       } catch (ghErr) {
@@ -106,9 +85,9 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
       if (!fallbackSuccess) {
         const errStr = String(err);
         if (errStr.includes("Could not fetch a valid release JSON") || errStr.includes("Could not fetch release manifest")) {
-          setStatusMessage("No updater manifest found for this channel. Check https://github.com/TheJonathanC/vitae/releases for updates.");
+          setStatusMessage(`Updates for this channel aren't published yet. You can check ${RELEASES_PAGE_URL} instead.`);
         } else {
-          setStatusMessage(`Update check failed: ${errStr}`);
+          setStatusMessage(`Couldn't check for updates: ${errStr}`);
         }
       }
     } finally {
@@ -122,20 +101,20 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
     if (availableUpdate.download_url) {
       try {
         await open(availableUpdate.download_url);
-        setStatusMessage("Opened installer download in your browser.");
+        setStatusMessage("The download opened in your browser.");
       } catch (e) {
         console.error("Failed to open URL:", e);
-        setStatusMessage(`Download manually at: ${availableUpdate.download_url}`);
+        setStatusMessage(`Download it from ${availableUpdate.download_url}`);
       }
       return;
     }
 
     setInstalling(true);
-    setStatusMessage("Downloading and applying update...");
+    setStatusMessage("Downloading and installing the update…");
 
     try {
       await invoke("install_update_custom", { channel });
-      setStatusMessage("Update installed successfully! Restarting...");
+      setStatusMessage("Update installed. Restarting…");
       setTimeout(async () => {
         try {
           await relaunch();
@@ -146,136 +125,100 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
     } catch (err) {
       console.error("Failed to install update:", err);
       try {
-        await open("https://github.com/TheJonathanC/vitae/releases");
-        setStatusMessage(`Direct installation failed (${err}). Opened releases page in browser.`);
+        await open(RELEASES_PAGE_URL);
+        setStatusMessage(`The update couldn't be installed (${err}), so the releases page opened in your browser.`);
       } catch {
-        setStatusMessage(`Failed to install update: ${err}`);
+        setStatusMessage(`The update couldn't be installed: ${err}`);
       }
       setInstalling(false);
     }
   };
 
   return (
-    <div className="setup-overlay" data-testid="settings-modal-overlay">
-      <div className="setup-modal settings-modal">
-        <div className="setup-header">
-          <h2>
-            <IconSettings size={18} />
-            <span>Settings</span>
-          </h2>
-          <button className="settings-close-btn" onClick={onClose} aria-label="Close">
-            <IconX size={16} />
+    <div className="dialog-backdrop" data-testid="settings-modal-overlay" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="dialog-head">
+          <h2 id="settings-title">Settings</h2>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
+            <IconX size={18} />
           </button>
         </div>
 
-        <div className="setup-content">
-          <section className="settings-section">
-            <h3>Release Channel</h3>
-            <p className="settings-desc">
-              Choose which release stream you want to receive updates from.
-            </p>
-
-            <div className="channel-options">
-              <label
-                className={`channel-card ${channel === "beta" ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="update-channel"
-                  value="beta"
-                  checked={channel === "beta"}
-                  onChange={() => handleChannelSelect("beta")}
-                />
-                <div className="channel-info">
-                  <div className="channel-title">
-                    <span>Beta Channel (Recommended)</span>
-                    <span className="badge-beta">v1.1-beta</span>
-                  </div>
-                  <div className="channel-text">
-                    Receive the latest automated builds, bug fixes, and preview features directly from commits.
-                  </div>
-                </div>
-              </label>
-
-              <label
-                className={`channel-card ${channel === "stable" ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="update-channel"
-                  value="stable"
-                  checked={channel === "stable"}
-                  onChange={() => handleChannelSelect("stable")}
-                />
-                <div className="channel-info">
-                  <div className="channel-title">
-                    <span>Stable Channel</span>
-                    <span className="badge-stable">v1.1</span>
-                  </div>
-                  <div className="channel-text">
-                    Only receive official milestone releases once tested and promoted to stable.
-                  </div>
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <section className="settings-section">
-            <h3>Update Preferences</h3>
-            <label className="settings-checkbox-label">
+        <div className="dialog-body">
+          <fieldset className="choice-group">
+            <legend>Release channel</legend>
+            <label className={`choice ${channel === "stable" ? "selected" : ""}`}>
               <input
-                type="checkbox"
-                checked={autoCheck}
-                onChange={(e) => handleAutoCheckToggle(e.target.checked)}
+                type="radio"
+                name="update-channel"
+                value="stable"
+                checked={channel === "stable"}
+                onChange={() => handleChannelSelect("stable")}
               />
-              <span>Automatically check for updates on startup</span>
+              <span className="choice-text">
+                <span className="choice-title">Stable (recommended)</span>
+                <span className="choice-desc">Tested releases only.</span>
+              </span>
             </label>
+            <label className={`choice ${channel === "beta" ? "selected" : ""}`}>
+              <input
+                type="radio"
+                name="update-channel"
+                value="beta"
+                checked={channel === "beta"}
+                onChange={() => handleChannelSelect("beta")}
+              />
+              <span className="choice-text">
+                <span className="choice-title">Beta</span>
+                <span className="choice-desc">New builds as soon as they're made. Expect rough edges.</span>
+              </span>
+            </label>
+          </fieldset>
 
-            <div className="settings-update-check">
-              <button
-                className="btn-primary"
-                onClick={checkForUpdates}
-                disabled={checking || installing}
-              >
-                {checking ? "Checking..." : "Check for Updates Now"}
-              </button>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={autoCheck}
+              onChange={(e) => handleAutoCheckToggle(e.target.checked)}
+            />
+            Check for updates when Vitae starts
+          </label>
 
-              {availableUpdate && (
-                <button
-                  className="btn-update"
-                  style={{ marginLeft: "10px" }}
-                  onClick={installUpdate}
-                  disabled={installing}
-                >
-                  {installing
-                    ? "Installing..."
-                    : availableUpdate.download_url
+          <div className="update-check">
+            <button type="button" className="btn" onClick={checkForUpdates} disabled={checking || installing}>
+              {checking ? "Checking…" : "Check for updates"}
+            </button>
+            {availableUpdate && (
+              <button type="button" className="btn btn-primary" onClick={installUpdate} disabled={installing}>
+                {installing
+                  ? "Installing…"
+                  : availableUpdate.download_url
                     ? `Download ${availableUpdate.version}`
                     : `Install ${availableUpdate.version}`}
-                </button>
-              )}
-            </div>
-
-            {statusMessage && (
-              <div className="settings-status-box">
-                {statusMessage}
-              </div>
+              </button>
             )}
-          </section>
+          </div>
+          {statusMessage && (
+            <p className="update-status" role="status">
+              {statusMessage}
+            </p>
+          )}
 
-          <section className="settings-section">
-            <h3>About Vitae</h3>
-            <div className="settings-about-grid">
-              <div><strong>Version:</strong> {version}</div>
-              <div><strong>Active Channel:</strong> {channel === "beta" ? "Beta" : "Stable"}</div>
-              <div><strong>Platform:</strong> Desktop (Tauri + React)</div>
-            </div>
-          </section>
+          <p className="about-line">
+            Vitae {version}, {channel === "beta" ? "beta" : "stable"} channel
+          </p>
         </div>
 
-        <div className="setup-footer">
-          <div style={{ flex: 1 }}></div>
-          <button onClick={onClose} className="btn-primary">
+        <div className="dialog-foot">
+          <button type="button" onClick={onClose} className="btn btn-primary">
             Done
           </button>
         </div>

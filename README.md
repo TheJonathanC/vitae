@@ -8,11 +8,11 @@ A modern, offline-first LaTeX editor built with Tauri, React, and TypeScript. In
 ## ✨ Features
 
 - 📝 **LaTeX Editor** - Monaco Editor with syntax highlighting and IntelliSense
-- 📊 **Live PDF Preview** - Split-pane view with real-time compilation
+- 📊 **Live PDF Preview** - Your resume updates beside the form as you type
 - 💾 **Local Storage** - SQLite database for document management
 - 🚀 **100% Offline** - No internet connection required
 - 📄 **PDF Export** - Save compiled PDFs anywhere on your system
-- 🎨 **Clean UI** - Modern dark theme with intuitive interface
+- 🎨 **Clean UI** - A simple form on one side, your page on the other; follows your system's light or dark theme
 - ⚡ **Fast & Lightweight** - Native desktop performance with Tauri
 - 🔄 **Auto-save** - Your changes are saved automatically
 
@@ -134,9 +134,12 @@ Drag `Vitae.app` to your `/Applications` folder to use Vitae like any native Mac
 
 Vitae includes a GitHub Actions CI/CD pipeline (`.github/workflows/ci-cd.yml`) and in-app release channel toggling:
 
-- **Beta Channel (`v1.1-beta`)**: Every commit to `main` is automatically tested (Rust + React unit tests) and published as a beta release (`v1.1.x-beta.<build>`) with rolling updater manifest `latest-beta.json`.
-- **Stable Channel (`v1.1+`)**: When tagged as a stable release (e.g. `v1.1.2`), the pipeline generates the `latest.json` manifest.
-- **In-App Channel Switcher**: Users can open **⚙️ Settings** to switch between Beta and Stable channels at any time and check for updates manually or on startup.
+- **Stable Channel (default)**: When tagged as a stable release (e.g. `v1.1.2`), the pipeline generates the `latest.json` manifest. New installs follow this channel.
+- **Beta Channel (opt-in)**: Every commit to `main` is automatically tested (Rust + React unit tests) and published as a pre-release of the *next* patch version (after `1.1.2`, betas are `1.1.3-beta.<build>`), with the rolling updater manifest `latest-beta.json`.
+- **In-App Channel Switcher**: Users can open **⚙️ Settings** to switch between Stable and Beta channels at any time and check for updates manually or on startup.
+- **Platforms**: The pipeline currently builds and auto-updates **Windows** installers only. On macOS and Linux, build from source (see above); the in-app update check links to the releases page there instead of offering a Windows installer.
+
+GitHub Actions are pinned to commit SHAs, workflow permissions are read-only except for the release job, and the update-signing key is only exposed to the Tauri bundling step, not to the frontend build.
 
 ### GitHub Repository Secrets for Auto-Updates:
 To enable automatic binary signing and generation of the updater signatures:
@@ -146,25 +149,24 @@ To enable automatic binary signing and generation of the updater signatures:
 
 ## 📖 Usage
 
-### Creating a Document
-1. Click the **+ New** button in the sidebar
-2. Enter a document title
-3. Start writing LaTeX code in the editor
+### Creating a resume
+1. Click the resume name at the top left and choose **New resume** (or **New resume** on the welcome screen)
+2. Give it a name only you will see, such as "Product designer, 2026"
+3. Fill in the form. The section bar jumps between Details, Experience, Education, Projects, Skills and Additional sections; in a highlight, Enter starts the next one
 
-### Compiling to PDF
-1. Write your LaTeX content
-2. Click the **Compile** button in the toolbar
-3. PDF preview appears in the right pane
+Prefer LaTeX? Switch to **LaTeX source** at the top of the editor. Editing the source by hand pauses the form so later form changes can't overwrite your edits; **Replace source with form** discards the manual edits and goes back to the form.
 
-### Exporting PDF
-1. Compile your document first
-2. Click **Export PDF**
-3. Choose a location and save
+### Previewing
+The preview on the right updates a moment after you stop typing. If a build fails, the bar under the preview says so; **See errors** lists what went wrong, with line numbers that are also marked in the LaTeX source. Turn off **Auto-update** to build only when you click **Update preview**.
 
-### Managing Documents
-- **Select**: Click any document in the sidebar
-- **Delete**: Click the 🗑️ icon on a document
-- **Auto-save**: Changes save automatically as you type
+### Changing the look
+Click the template name at the top (for example **Modern Professional**) to switch templates or import your own `.tex` file. Your content stays the same.
+
+### Exporting
+Click **Export PDF** in the bar under the preview and choose where to save it.
+
+### Managing resumes
+Open the menu under the resume name to switch between resumes, create a new one, or delete one. Changes save automatically as you type.
 
 ## 🗂️ Project Structure
 
@@ -182,7 +184,9 @@ vitae/
 ├── src-tauri/                # Rust backend
 │   ├── src/
 │   │   ├── main.rs           # Tauri application & commands
+│   │   ├── latex.rs          # Sandboxed pdflatex runner & log parsing
 │   │   └── db.rs             # SQLite database operations
+│   ├── templates/            # Built-in resume templates (shared with the frontend)
 │   ├── Cargo.toml            # Rust dependencies
 │   └── tauri.conf.json       # Tauri configuration
 ├── index.html                # HTML entry point
@@ -213,6 +217,9 @@ Documents are stored in a local SQLite database at:
 
 Temporary LaTeX compilation files are stored in:
 - `{AppData}/temp/`
+
+### Compilation sandbox
+`pdflatex` runs with shell escape disabled and, on TeX Live / MacTeX, with `openin_any=p` / `openout_any=p`, so a document or imported template can't read or write files outside the compile directory (for example, it can't embed `~/.ssh` keys into a PDF). Each pass is stopped after 120 seconds, so an infinite TeX loop can't hang the app. MiKTeX doesn't honour the `openin_any` setting; shell escape is still disabled there.
 
 ## 🎯 Roadmap
 

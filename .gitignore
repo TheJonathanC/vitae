@@ -12,7 +12,6 @@ dist-ssr/
 
 # Rust/Cargo
 src-tauri/target/
-src-tauri/Cargo.lock
 
 # Tauri
 src-tauri/WixTools/

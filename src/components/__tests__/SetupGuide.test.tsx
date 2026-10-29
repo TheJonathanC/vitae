@@ -16,17 +16,17 @@ describe("SetupGuide component", () => {
     render(<SetupGuide onClose={handleClose} />);
 
     // Step 1
-    expect(screen.getByText("Welcome to Vitae!")).toBeInTheDocument();
+    expect(screen.getByText("Vitae needs LaTeX")).toBeInTheDocument();
     expect(screen.getByText("Step 1 of 3")).toBeInTheDocument();
 
     // Click Next -> Step 2
     fireEvent.click(screen.getByText("Next"));
-    expect(screen.getByText("Install LaTeX Distribution")).toBeInTheDocument();
+    expect(screen.getByText("Install LaTeX")).toBeInTheDocument();
     expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
 
     // Click Back -> Step 1
     fireEvent.click(screen.getByText("Back"));
-    expect(screen.getByText("Welcome to Vitae!")).toBeInTheDocument();
+    expect(screen.getByText("Vitae needs LaTeX")).toBeInTheDocument();
   });
 
   it("completes the guide and calls onClose on last step", () => {
@@ -38,11 +38,17 @@ describe("SetupGuide component", () => {
     // Advance to step 3
     fireEvent.click(screen.getByText("Next"));
 
-    expect(screen.getByText("You're All Set!")).toBeInTheDocument();
+    expect(screen.getByText("Restart Vitae")).toBeInTheDocument();
     expect(screen.getByText("Step 3 of 3")).toBeInTheDocument();
 
-    // Click Got It!
-    fireEvent.click(screen.getByText("Got It!"));
+    fireEvent.click(screen.getByText("Done"));
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("can be dismissed from the first step", () => {
+    const handleClose = vi.fn();
+    render(<SetupGuide onClose={handleClose} />);
+    fireEvent.click(screen.getByText("Not now"));
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
 });

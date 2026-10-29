@@ -1,12 +1,59 @@
+/*
+ * Vitae design tokens and base elements.
+ * Concept: a proofing desk. Quiet paper-and-ink chrome for writing; the
+ * résumé itself sits on a green cutting mat in the preview.
+ */
+
 :root {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  /* Ink and paper */
+  --ink: #1d2731;
+  --ink-2: #4c5864;
+  --ink-3: #646f79;
+  --paper: #ffffff;
+  --chrome: #f3f5f4;
+  --chrome-2: #e8ecea;
+  --rule: #dde2df;
+  --rule-strong: #c3cbc7;
 
-  color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #1e1e1e;
+  /* Cutting-mat green: the preview surface and the one accent */
+  --accent: #2c5a4b;
+  --accent-hover: #234a3d;
+  --accent-soft: #e4efea;
+  --on-accent: #ffffff;
+  --mat: #305e4f;
+  --mat-grid: rgba(255, 255, 255, 0.07);
+  --mat-grid-major: rgba(255, 255, 255, 0.14);
+  --mat-ink: #e6efea;
 
+  /* Signals */
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --warning: #8f5300;
+  --warning-soft: #fff4e0;
+  --success: #2c7a5b;
+
+  --focus: #2c5a4b;
+  --shadow-pop: 0 14px 36px -10px rgba(20, 28, 34, 0.32), 0 2px 6px rgba(20, 28, 34, 0.08);
+  --shadow-page: 0 1px 1px rgba(0, 0, 0, 0.2), 0 12px 28px -10px rgba(0, 0, 0, 0.55);
+
+  /* Type: one family, Franklin Gothic's print-shop lineage */
+  --font: "Libre Franklin Variable", "Libre Franklin", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  color-scheme: light;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  line-height: 1.45;
+  color: var(--ink);
+  background-color: var(--chrome);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -14,51 +61,174 @@
   -webkit-text-size-adjust: 100%;
 }
 
-* {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e4e9e6;
+    --ink-2: #aeb8b3;
+    --ink-3: #8d9893;
+    --paper: #1a2024;
+    --chrome: #14191c;
+    --chrome-2: #232b2f;
+    --rule: #2b3439;
+    --rule-strong: #3d484e;
+
+    --accent: #78c2a4;
+    --accent-hover: #91d1b7;
+    --accent-soft: #1f342d;
+    --on-accent: #0d1915;
+    --mat: #1e3d33;
+    --mat-grid: rgba(255, 255, 255, 0.05);
+    --mat-grid-major: rgba(255, 255, 255, 0.1);
+    --mat-ink: #d5e4dc;
+
+    --danger: #f08a7f;
+    --danger-soft: #3a201d;
+    --warning: #e9b264;
+    --warning-soft: #352a17;
+    --success: #78c2a4;
+
+    --focus: #91d1b7;
+    --shadow-pop: 0 14px 36px -10px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.35);
+
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
-  margin: 0;
-  display: flex;
   min-width: 320px;
-  min-height: 100vh;
+  overflow: hidden;
+  background-color: var(--chrome);
 }
 
-#root {
-  width: 100%;
-  height: 100vh;
-  overflow: hidden;
+[hidden] {
+  display: none !important;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
 }
 
 button {
-  border-radius: 6px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 0.9em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #2d2d2d;
   cursor: pointer;
-  transition: all 0.2s;
-  color: #fff;
-}
-
-button:hover {
-  background-color: #3d3d3d;
-}
-
-button:active {
-  transform: translateY(1px);
+  background: none;
+  border: none;
 }
 
 button:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
 
-button:disabled:hover {
-  background-color: #2d2d2d;
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="url"],
+textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: var(--text-md);
+  line-height: 1.4;
+  color: var(--ink);
+  background-color: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-3);
+  opacity: 0.8;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+input:disabled,
+textarea:disabled {
+  color: var(--ink-3);
+  background-color: var(--chrome);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

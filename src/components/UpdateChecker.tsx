@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { relaunch } from "@tauri-apps/api/process";
 import { open } from "@tauri-apps/api/shell";
+import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
-import { IconBell } from "./Icons";
+import { checkGithubReleases, getStoredChannel, RELEASES_PAGE_URL } from "../utils/updates";
 
 interface UpdateCheckerProps {
   channel?: string;
@@ -14,11 +15,11 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResponse | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [activeChannel, setActiveChannel] = useState<string>("beta");
+  const [activeChannel, setActiveChannel] = useState<string>(getStoredChannel);
 
   useEffect(() => {
     let isCancelled = false;
-    const channel = propChannel || localStorage.getItem("vitae_channel") || "beta";
+    const channel = propChannel || getStoredChannel();
     setActiveChannel(channel);
 
     // Clear stale banner whenever channel changes
@@ -45,36 +46,13 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
           console.warn("Primary update check failed, attempting GitHub Releases fallback:", error);
           
           try {
-            const ghResponse = await fetch("https://api.github.com/repos/TheJonathanC/vitae/releases");
-            if (ghResponse.ok && !isCancelled) {
-              const releases = await ghResponse.json();
-              const targetRelease = releases.find((r: any) => {
-                if (channel === "beta") return true;
-                return !r.prerelease;
-              });
-
-              if (targetRelease) {
-                const rawTag = targetRelease.tag_name || "";
-                const remoteVersion = rawTag.replace(/^v/, "");
-                const localVersion = (packageInfo.version || "").replace(/^v/, "");
-
-                if (remoteVersion && remoteVersion !== localVersion) {
-                  const exeAsset = targetRelease.assets?.find((a: any) =>
-                    a.name.endsWith(".exe") || a.name.endsWith(".msi")
-                  );
-                  const downloadUrl = exeAsset?.browser_download_url || targetRelease.html_url;
-
-                  setUpdateAvailable(true);
-                  setUpdateInfo({
-                    should_update: true,
-                    version: rawTag,
-                    date: targetRelease.published_at,
-                    body: targetRelease.body || null,
-                    download_url: downloadUrl,
-                  });
-                  return;
-                }
-              }
+            const localVersion =
+              (await getVersion().catch(() => null)) || packageInfo.version;
+            const release = await checkGithubReleases(channel, localVersion);
+            if (release?.should_update && !isCancelled) {
+              setUpdateAvailable(true);
+              setUpdateInfo(release);
+              return;
             }
           } catch (ghErr) {
             // Ignore fallback failure in background auto-check
@@ -112,7 +90,7 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
       await relaunch();
     } catch (error) {
       try {
-        await open("https://github.com/TheJonathanC/vitae/releases");
+        await open(RELEASES_PAGE_URL);
       } catch {
         alert(`Update failed: ${error}`);
       }
@@ -123,53 +101,29 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
   if (!updateAvailable || !updateInfo) return null;
 
   return (
-    <div className="update-banner" data-testid="update-banner">
-      <div className="update-content">
-        <IconBell size={18} className="update-icon" />
-        <div className="update-text">
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <strong>Update Available!</strong>
-            <span
-              className={
-                activeChannel === "beta" ? "badge-beta" : "badge-stable"
-              }
-              style={{ fontSize: "0.75em", padding: "2px 6px", borderRadius: "3px" }}
-            >
-              {activeChannel.toUpperCase()}
-            </span>
-          </div>
-          <span>
-            {updateInfo.download_url
-              ? `Version ${updateInfo.version} is available to download.`
-              : `Version ${updateInfo.version} is ready to install.`}
-          </span>
-          {updateInfo.body && (
-            <span className="update-notes-preview" title={updateInfo.body}>
-              {updateInfo.body.length > 80
-                ? `${updateInfo.body.slice(0, 80)}...`
-                : updateInfo.body}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="update-actions">
+    <div className="update-bar" data-testid="update-banner" role="region" aria-label="Update available">
+      <p>
+        {activeChannel === "beta" && <span className="tag">Beta</span>}
+        {updateInfo.download_url
+          ? `Version ${updateInfo.version} is available to download.`
+          : `Version ${updateInfo.version} is ready to install.`}
+      </p>
+      <div className="update-bar-actions">
         <button
-          onClick={handleUpdate}
-          disabled={downloading}
-          className="btn-update"
-        >
-          {downloading
-            ? "Installing..."
-            : updateInfo.download_url
-            ? "Download"
-            : "Update Now"}
-        </button>
-        <button
+          type="button"
           onClick={() => setUpdateAvailable(false)}
-          className="btn-update-later"
+          className="btn btn-small"
           disabled={downloading}
         >
           Later
+        </button>
+        <button
+          type="button"
+          onClick={handleUpdate}
+          disabled={downloading}
+          className="btn btn-primary btn-small"
+        >
+          {downloading ? "Installing…" : updateInfo.download_url ? "Download" : "Update and restart"}
         </button>
       </div>
     </div>

@@ -36,7 +36,7 @@ describe("Editor component", () => {
 
   it("renders custom loading placeholder", () => {
     render(<Editor content="test" onChange={() => {}} />);
-    expect(screen.getByText("Loading editor...")).toBeInTheDocument();
+    expect(screen.getByText("Loading the LaTeX editor…")).toBeInTheDocument();
   });
 });
 

@@ -16,6 +16,8 @@ export const IconPlus: React.FC<IconProps> = ({ size = 16, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <line x1="12" y1="5" x2="12" y2="19" />
@@ -34,6 +36,8 @@ export const IconTrash: React.FC<IconProps> = ({ size = 15, className = "", ...p
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="3 6 5 6 21 6" />
@@ -54,6 +58,8 @@ export const IconSettings: React.FC<IconProps> = ({ size = 16, className = "", .
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <circle cx="12" cy="12" r="3" />
@@ -72,6 +78,8 @@ export const IconPalette: React.FC<IconProps> = ({ size = 16, className = "", ..
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
@@ -93,6 +101,8 @@ export const IconCompile: React.FC<IconProps> = ({ size = 15, className = "", ..
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" fillOpacity="0.2" />
@@ -110,6 +120,8 @@ export const IconAuto: React.FC<IconProps> = ({ size = 15, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="23 4 23 10 17 10" />
@@ -129,6 +141,8 @@ export const IconDownload: React.FC<IconProps> = ({ size = 15, className = "", .
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -148,6 +162,8 @@ export const IconTerminal: React.FC<IconProps> = ({ size = 15, className = "", .
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="4 17 10 11 4 5" />
@@ -166,6 +182,8 @@ export const IconChevronDown: React.FC<IconProps> = ({ size = 14, className = ""
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="6 9 12 15 18 9" />
@@ -183,6 +201,8 @@ export const IconChevronUp: React.FC<IconProps> = ({ size = 14, className = "", 
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="18 15 12 9 6 15" />
@@ -200,6 +220,8 @@ export const IconChevronLeft: React.FC<IconProps> = ({ size = 14, className = ""
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="15 18 9 12 15 6" />
@@ -217,6 +239,8 @@ export const IconChevronRight: React.FC<IconProps> = ({ size = 14, className = "
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="9 18 15 12 9 6" />
@@ -234,6 +258,8 @@ export const IconSplit: React.FC<IconProps> = ({ size = 15, className = "", ...p
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -252,6 +278,8 @@ export const IconForm: React.FC<IconProps> = ({ size = 15, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -273,6 +301,8 @@ export const IconCode: React.FC<IconProps> = ({ size = 15, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="16 18 22 12 16 6" />
@@ -291,6 +321,8 @@ export const IconEye: React.FC<IconProps> = ({ size = 15, className = "", ...pro
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -309,6 +341,8 @@ export const IconCheck: React.FC<IconProps> = ({ size = 14, className = "", ...p
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polyline points="20 6 9 17 4 12" />
@@ -326,6 +360,8 @@ export const IconX: React.FC<IconProps> = ({ size = 14, className = "", ...props
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <line x1="18" y1="6" x2="6" y2="18" />
@@ -344,6 +380,8 @@ export const IconUser: React.FC<IconProps> = ({ size = 15, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -362,6 +400,8 @@ export const IconBriefcase: React.FC<IconProps> = ({ size = 15, className = "", 
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
@@ -380,6 +420,8 @@ export const IconGraduationCap: React.FC<IconProps> = ({ size = 15, className = 
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
@@ -398,6 +440,8 @@ export const IconFolder: React.FC<IconProps> = ({ size = 15, className = "", ...
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -415,6 +459,8 @@ export const IconWrench: React.FC<IconProps> = ({ size = 15, className = "", ...
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -432,6 +478,8 @@ export const IconSparkles: React.FC<IconProps> = ({ size = 15, className = "", .
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
@@ -453,6 +501,8 @@ export const IconLayers: React.FC<IconProps> = ({ size = 15, className = "", ...
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <polygon points="12 2 2 7 12 12 22 7 12 2" />
@@ -472,6 +522,8 @@ export const IconBell: React.FC<IconProps> = ({ size = 15, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -490,6 +542,8 @@ export const IconUpload: React.FC<IconProps> = ({ size = 15, className = "", ...
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -509,6 +563,8 @@ export const IconFile: React.FC<IconProps> = ({ size = 15, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
@@ -527,6 +583,8 @@ export const IconSearch: React.FC<IconProps> = ({ size = 15, className = "", ...
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <circle cx="11" cy="11" r="8" />
@@ -545,6 +603,8 @@ export const IconMenu: React.FC<IconProps> = ({ size = 16, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <line x1="3" y1="12" x2="21" y2="12" />
@@ -564,6 +624,8 @@ export const IconSidebar: React.FC<IconProps> = ({ size = 16, className = "", ..
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -582,6 +644,8 @@ export const IconGrip: React.FC<IconProps> = ({ size = 14, className = "", ...pr
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`icon ${className}`}
+    aria-hidden="true"
+    focusable="false"
     {...props}
   >
     <circle cx="9" cy="6" r="1" fill="currentColor" />

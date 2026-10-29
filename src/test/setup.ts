@@ -26,3 +26,8 @@ if (typeof window !== "undefined" && !window.matchMedia) {
   });
 }
 
+
+// jsdom has no object URLs; the PDF preview revokes page images it replaces.
+if (typeof URL.revokeObjectURL !== "function") {
+  URL.revokeObjectURL = () => {};
+}

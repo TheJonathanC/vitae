@@ -6,7 +6,10 @@ import {
   extractFieldsFromTemplate,
   convertRawLatexToTemplate,
   sanitizeLatexUrl,
+  escapeLatexUrl,
   reorderTemplateSections,
+  getEmptyResumeData,
+  normalizeResumeData,
 } from "../templateEngine";
 import { BUILTIN_TEMPLATES } from "../templatePresets";
 import { ResumeData } from "../../types";
@@ -22,6 +25,7 @@ describe("templateEngine", () => {
       expect(escapeLatex("{braces}")).toBe("\\{braces\\}");
       expect(escapeLatex("C++ & C# ~ 99%")).toBe("C++ \\& C\\# \\textasciitilde{} 99\\%");
       expect(escapeLatex("backslash \\ test")).toBe("backslash \\textbackslash{} test");
+      expect(escapeLatex("<100ms | >5x")).toBe("\\textless{}100ms \\textbar{} \\textgreater{}5x");
     });
 
     it("handles null and undefined gracefully", () => {
@@ -401,6 +405,102 @@ Software engineer at Tech Inc.
       const parameterized = `\\documentclass{article}\\begin{document}{{name}}\\end{document}`;
       const result = convertRawLatexToTemplate(parameterized);
       expect(result.templateContent).toBe(parameterized);
+    });
+
+    it("only reports fields it actually found", () => {
+      const result = convertRawLatexToTemplate(
+        "\\documentclass{article}\\begin{document}\\section*{Experience}\\end{document}"
+      );
+      expect(result.extractedData).toEqual({});
+    });
+
+    it("parameterizes every GitHub/LinkedIn occurrence without doubling the host", () => {
+      const raw =
+        "\\href{https://github.com/janedoe}{github.com/janedoe} | \\href{https://www.linkedin.com/in/jane-doe/}{linkedin.com/in/jane-doe}";
+      const { templateContent, extractedData } = convertRawLatexToTemplate(raw);
+      expect(extractedData.personal).toEqual({
+        github: "github.com/janedoe",
+        linkedin: "linkedin.com/in/jane-doe",
+      });
+      expect(templateContent).toBe(
+        "\\href{https://{{github}}}{{{github}}} | \\href{https://{{linkedin}}}{{{linkedin}}}"
+      );
+      const data = getEmptyResumeData();
+      data.personal = { ...data.personal, ...extractedData.personal, name: "Jane" };
+      expect(renderTemplate(templateContent, data)).toBe(
+        "\\href{https://github.com/janedoe}{github.com/janedoe} | \\href{https://linkedin.com/in/jane-doe}{linkedin.com/in/jane-doe}"
+      );
+    });
+  });
+
+  describe("context-aware escaping", () => {
+    it("escapes URL targets differently from display text", () => {
+      const data = getEmptyResumeData();
+      data.personal.website = "example.com/~me/my_site?a=1&b=2#top";
+      const rendered = renderTemplate("\\href{{{website}}}{{{website}}}", data);
+      expect(rendered).toBe(
+        "\\href{https://example.com/~me/my_site?a=1&b=2\\#top}{example.com/\\textasciitilde{}me/my\\_site?a=1\\&b=2\\#top}"
+      );
+    });
+
+    it("does not double the scheme when the user enters a full URL", () => {
+      const data = getEmptyResumeData();
+      data.personal.github = "https://github.com/me";
+      expect(renderTemplate("\\href{https://{{github}}}{x}", data)).toBe("\\href{https://github.com/me}{x}");
+      data.personal.email = "a_b@example.com";
+      expect(renderTemplate("\\href{mailto:{{email}}}{{{email}}}", data)).toBe(
+        "\\href{mailto:a_b@example.com}{a\\_b@example.com}"
+      );
+    });
+
+    it("percent-encodes characters that would break the \\href argument", () => {
+      expect(escapeLatexUrl("https://x.com/{a} b\\c%")).toBe("https://x.com/\\%7Ba\\%7D\\%20b\\%5Cc\\%");
+    });
+
+    it("escapes custom template variables", () => {
+      const data = getEmptyResumeData();
+      data.customVariables = { award: "Top 5% & #1" };
+      expect(renderTemplate("Award: {{award}}", data)).toBe("Award: Top 5\\% \\& \\#1");
+    });
+
+    it("keeps $-patterns in user text literal", () => {
+      const data = getEmptyResumeData();
+      data.experience = [
+        { id: "e1", role: "Dev", company: "Co", bullets: ["Saved $'500k and $&"] },
+      ];
+      const rendered = renderTemplate("{{#experience}}{{#items}}{{#bullets}}* {{bullet}}{{/bullets}}{{/items}}{{/experience}}", data);
+      expect(rendered).toBe("* Saved \\$'500k and \\$\\&");
+    });
+
+    it("renders an entry whose bullets are all empty instead of dropping it", () => {
+      const data = getEmptyResumeData();
+      data.experience = [{ id: "e1", role: "Engineer", company: "Acme", bullets: [""] }];
+      const rendered = renderTemplate(BUILTIN_TEMPLATES[0].content, data);
+      expect(rendered).toContain("\\textbf{Engineer}");
+      expect(rendered).not.toContain("\\begin{itemize}[noitemsep,topsep=1pt]\n\\end{itemize}");
+    });
+  });
+
+  describe("normalizeResumeData", () => {
+    it("fills in missing sections from partial or legacy JSON", () => {
+      const data = normalizeResumeData({ personal: { name: "John" } });
+      expect(data.personal.name).toBe("John");
+      expect(data.experience).toEqual([]);
+      expect(data.customSections).toEqual([]);
+      expect(data.customVariables).toEqual({});
+    });
+
+    it("drops malformed values and assigns missing ids", () => {
+      const data = normalizeResumeData({
+        experience: [{ role: "Dev", bullets: ["a", 3, null] }],
+        customVariables: { ok: "yes", bad: 5 },
+        sourceEditedManually: true,
+      });
+      expect(data.experience[0].id).toMatch(/^exp-/);
+      expect(data.experience[0].bullets).toEqual(["a"]);
+      expect(data.customVariables).toEqual({ ok: "yes" });
+      expect(data.sourceEditedManually).toBe(true);
+      expect(normalizeResumeData("not json").personal.name).toBe("");
     });
   });
 });
