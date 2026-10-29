@@ -6,7 +6,6 @@ import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
 import { checkGithubReleases, getStoredChannel, RELEASES_PAGE_URL } from "../utils/updates";
-import { IconBell } from "./Icons";
 
 interface UpdateCheckerProps {
   channel?: string;
@@ -102,53 +101,29 @@ function UpdateChecker({ channel: propChannel }: UpdateCheckerProps) {
   if (!updateAvailable || !updateInfo) return null;
 
   return (
-    <div className="update-banner" data-testid="update-banner" role="region" aria-label="Update available">
-      <div className="update-content">
-        <IconBell size={18} className="update-icon" />
-        <div className="update-text">
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <strong>Update Available!</strong>
-            <span
-              className={
-                activeChannel === "beta" ? "badge-beta" : "badge-stable"
-              }
-              style={{ fontSize: "0.75em", padding: "2px 6px", borderRadius: "3px" }}
-            >
-              {activeChannel.toUpperCase()}
-            </span>
-          </div>
-          <span>
-            {updateInfo.download_url
-              ? `Version ${updateInfo.version} is available to download.`
-              : `Version ${updateInfo.version} is ready to install.`}
-          </span>
-          {updateInfo.body && (
-            <span className="update-notes-preview" title={updateInfo.body}>
-              {updateInfo.body.length > 80
-                ? `${updateInfo.body.slice(0, 80)}...`
-                : updateInfo.body}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="update-actions">
+    <div className="update-bar" data-testid="update-banner" role="region" aria-label="Update available">
+      <p>
+        {activeChannel === "beta" && <span className="tag">Beta</span>}
+        {updateInfo.download_url
+          ? `Version ${updateInfo.version} is available to download.`
+          : `Version ${updateInfo.version} is ready to install.`}
+      </p>
+      <div className="update-bar-actions">
         <button
-          onClick={handleUpdate}
-          disabled={downloading}
-          className="btn-update"
-        >
-          {downloading
-            ? "Installing..."
-            : updateInfo.download_url
-            ? "Download"
-            : "Update Now"}
-        </button>
-        <button
+          type="button"
           onClick={() => setUpdateAvailable(false)}
-          className="btn-update-later"
+          className="btn btn-small"
           disabled={downloading}
         >
           Later
+        </button>
+        <button
+          type="button"
+          onClick={handleUpdate}
+          disabled={downloading}
+          className="btn btn-primary btn-small"
+        >
+          {downloading ? "Installing…" : updateInfo.download_url ? "Download" : "Update and restart"}
         </button>
       </div>
     </div>

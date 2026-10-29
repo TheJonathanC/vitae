@@ -23,6 +23,13 @@ vi.mock("@monaco-editor/react", () => ({
 // The real Monaco setup isn't needed with the mocked editor
 vi.mock("../../monaco", () => ({}));
 
+// PDF.js needs a real canvas; render one fake page per PDF
+vi.mock("../../utils/pdfRenderer", () => ({
+  renderPdfPages: vi.fn(async (_b64: string, width: number) => [
+    { url: "blob:page-1", width, height: width * 1.3 },
+  ]),
+}));
+
 // Mock Tauri APIs
 vi.mock("@tauri-apps/api/tauri", () => ({
   invoke: vi.fn(),
@@ -109,6 +116,9 @@ async function renderApp() {
 
 const openDrawer = () => fireEvent.click(screen.getByTestId("btn-toggle-sidebar"));
 
+/** Turns auto-update off so a test controls when builds run. */
+const manualBuilds = () => localStorage.setItem("vitae_auto_compile", "false");
+
 const savedCalls = () =>
   (invoke as any).mock.calls.filter(([cmd]: [string]) => cmd === "update_document_full");
 
@@ -119,7 +129,7 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     mockBackend();
   });
 
-  it("loads and displays documents on startup with the drawer closed", async () => {
+  it("loads and displays documents on startup with the document menu closed", async () => {
     await renderApp();
     expect(screen.queryByText("Cover Letter")).not.toBeInTheDocument();
 
@@ -131,14 +141,14 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     await renderApp();
     openDrawer();
 
-    fireEvent.click(screen.getByRole("button", { name: /create new document/i }));
-    const dialog = screen.getByRole("dialog", { name: /new document/i });
+    fireEvent.click(screen.getByRole("button", { name: /new resume/i }));
+    const dialog = screen.getByRole("dialog", { name: "New resume" });
     expect(dialog).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Document title"), {
+    fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Curriculum Vitae" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create resume" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -231,20 +241,29 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     expect(screen.getByRole("heading", { level: 1, name: "Resume 2026" })).toBeInTheDocument();
   });
 
-  it("compiles the document when Compile button is clicked", async () => {
+  it("keeps the preview up to date automatically", async () => {
     await renderApp();
 
-    fireEvent.click(screen.getByText("Compile"));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("compile_latex", {
-        id: "doc-1",
-        content: mockDocs[0].content,
-      });
-      const iframe = screen.getByTitle("PDF Preview");
-      expect(iframe.getAttribute("src")).toBe("data:application/pdf;base64,JVBERi0xLjQ=");
+    expect(await screen.findByRole("img", { name: "Page 1 of 1" }, { timeout: 4000 })).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("compile_latex", {
+      id: "doc-1",
+      content: mockDocs[0].content,
     });
     expect(invoke).toHaveBeenCalledWith("read_pdf_bytes", { id: "doc-1" });
+    expect(screen.getByText("Up to date")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /export pdf/i })).toBeEnabled();
+  });
+
+  it("builds on request when auto-update is off", async () => {
+    manualBuilds();
+    await renderApp();
+
+    expect(screen.getByRole("switch", { name: /auto-update/i })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /export pdf/i })).toBeDisabled();
+    fireEvent.click(screen.getByText("Update preview"));
+
+    expect(await screen.findByRole("img", { name: "Page 1 of 1" })).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("compile_latex", { id: "doc-1", content: mockDocs[0].content });
   });
 
   it("ignores a compile result that arrives after switching documents", async () => {
@@ -256,9 +275,10 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
           })
         : undefined
     );
+    manualBuilds();
     await renderApp();
 
-    fireEvent.click(screen.getByText("Compile"));
+    fireEvent.click(screen.getByText("Update preview"));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("compile_latex", expect.anything()));
 
     openDrawer();
@@ -276,11 +296,11 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
       await new Promise((r) => setTimeout(r, 50));
     });
 
-    expect(screen.queryByText(/Error from the other document/)).not.toBeInTheDocument();
-    expect(screen.queryByTitle("PDF Preview")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't build the PDF/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Page 1/ })).not.toBeInTheDocument();
   });
 
-  it("displays compilation errors and error banner when compilation fails", async () => {
+  it("reports build errors in the preview bar with details on request", async () => {
     mockBackend((cmd) =>
       cmd === "compile_latex"
         ? Promise.resolve({
@@ -290,14 +310,21 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
           })
         : undefined
     );
+    manualBuilds();
     await renderApp();
 
-    fireEvent.click(screen.getByText("Compile"));
+    fireEvent.click(screen.getByText("Update preview"));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Compilation failed:/i)).toBeInTheDocument();
-      expect(screen.getByText(/Line 12: Undefined control sequence \\foo/i)).toBeInTheDocument();
-    });
+    expect(await screen.findByText("Couldn't build the PDF, 1 error")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "See errors" }));
+
+    const details = screen.getByRole("region", { name: "Why the PDF couldn't be built" });
+    expect(details).toHaveTextContent("Line 12");
+    expect(details).toHaveTextContent("Undefined control sequence \\foo");
+
+    // Jump to the source, where the lines are marked
+    fireEvent.click(screen.getByRole("button", { name: "Open LaTeX source" }));
+    expect(screen.getByTestId("tab-code-view")).toHaveClass("active");
   });
 
   it("keeps a failed save queued and retries it", async () => {
@@ -312,7 +339,7 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     fireEvent.change(screen.getByTestId("input-personal-name"), { target: { value: "Riley Q. Chen" } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to save document: database is locked/)).toBeInTheDocument();
+      expect(screen.getByText(/Your changes couldn't be saved \(database is locked\)/)).toBeInTheDocument();
     });
     await waitFor(() => expect(attempts).toBe(2), { timeout: 5000 });
     const [, retried] = savedCalls()[1];
@@ -341,11 +368,17 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
       { type: "text/plain" }
     );
     fireEvent.change(screen.getByTestId("template-file-input"), { target: { files: [file] } });
-    fireEvent.click(await screen.findByText("Save Template to Library"));
+    // Saving is enabled once the file has been read
+    const save = await screen.findByRole("button", { name: "Save and use template" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
 
-    await waitFor(() => {
-      expect(screen.getByText("jane", { selector: ".template-badge" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("btn-open-templates")).toHaveTextContent("Template: jane");
+      },
+      { timeout: 4000 }
+    );
     // Existing name is kept; the empty email is filled from the template
     expect(screen.getByTestId("input-personal-name")).toHaveValue("Riley Chen");
     expect(screen.getByLabelText("Email")).toHaveValue("jane@example.com");
@@ -363,7 +396,8 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Setup LaTeX/i)).toBeInTheDocument();
+      expect(screen.getByText("LaTeX isn't installed")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Set up LaTeX" })).toBeInTheDocument();
     });
   });
 
@@ -373,13 +407,13 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     fireEvent.click(screen.getByTestId("btn-settings"));
 
     await waitFor(() => {
-      expect(screen.getByText("Release Channel")).toBeInTheDocument();
+      expect(screen.getByText("Release channel")).toBeInTheDocument();
     });
 
     // Stable is the default for new installs
     expect((screen.getByDisplayValue("stable") as HTMLInputElement).checked).toBe(true);
 
-    fireEvent.click(screen.getByText("Beta Channel"));
+    fireEvent.click(screen.getByText("Beta"));
 
     await waitFor(() => {
       expect(localStorage.getItem("vitae_channel")).toBe("beta");
@@ -396,13 +430,14 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     expect(codeTab).not.toHaveClass("active");
     expect(screen.getByTestId("resume-form")).toBeInTheDocument();
 
+    // The switch sits in the same place in both views but is a new element
     fireEvent.click(codeTab);
-    expect(codeTab).toHaveClass("active");
-    expect(formTab).not.toHaveClass("active");
+    expect(screen.getByTestId("tab-code-view")).toHaveClass("active");
+    expect(screen.getByTestId("tab-form-view")).not.toHaveClass("active");
     expect(await screen.findByTestId("monaco-mock")).toBeInTheDocument();
 
-    fireEvent.click(formTab);
-    expect(formTab).toHaveClass("active");
+    fireEvent.click(screen.getByTestId("tab-form-view"));
+    expect(screen.getByTestId("tab-form-view")).toHaveClass("active");
     expect(screen.getByTestId("resume-form")).toBeInTheDocument();
   });
 
@@ -413,7 +448,7 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("template-manager-modal")).toBeInTheDocument();
-      expect(screen.getByRole("dialog", { name: "Resume Templates" })).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Templates" })).toBeInTheDocument();
     });
 
     // Escape closes the dialog
@@ -446,6 +481,6 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     localStorage.setItem("vitae_split_ratio", "not-a-number");
     await renderApp();
     const pane = document.querySelector(".editor-pane") as HTMLElement;
-    expect(pane.style.width).toBe("50%");
+    expect(pane.style.flexBasis).toBe("50%");
   });
 });

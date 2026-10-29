@@ -30,9 +30,9 @@ describe("SettingsModal component", () => {
       />
     );
 
-    expect(screen.getByText("Release Channel")).toBeInTheDocument();
-    expect(screen.getByText("Beta Channel")).toBeInTheDocument();
-    expect(screen.getByText("Stable Channel (Recommended)")).toBeInTheDocument();
+    expect(screen.getByText("Release channel")).toBeInTheDocument();
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+    expect(screen.getByText("Stable (recommended)")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: /settings/i })).toBeInTheDocument();
 
     const betaRadio = screen.getByDisplayValue("beta") as HTMLInputElement;
@@ -49,7 +49,7 @@ describe("SettingsModal component", () => {
       />
     );
 
-    const stableCard = screen.getByText("Stable Channel (Recommended)");
+    const stableCard = screen.getByText("Stable (recommended)");
     fireEvent.click(stableCard);
 
     expect(handleChannelChange).toHaveBeenCalledTimes(1);
@@ -73,7 +73,7 @@ describe("SettingsModal component", () => {
       />
     );
 
-    const checkBtn = screen.getByText("Check for Updates Now");
+    const checkBtn = screen.getByText("Check for updates");
     fireEvent.click(checkBtn);
 
     await waitFor(() => {
@@ -81,7 +81,7 @@ describe("SettingsModal component", () => {
         channel: "beta",
       });
       expect(
-        screen.getByText(/Update 1.1.0-beta.2 is available!/i)
+        screen.getByText(/Version 1.1.0-beta.2 is available\./i)
       ).toBeInTheDocument();
       expect(screen.getByText("Install 1.1.0-beta.2")).toBeInTheDocument();
     });
@@ -122,10 +122,10 @@ describe("SettingsModal component", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Check for Updates Now"));
+    fireEvent.click(screen.getByText("Check for updates"));
 
     await waitFor(() => {
-      expect(screen.getByText(/Update v1.2.0-beta.9 is available on GitHub!/i)).toBeInTheDocument();
+      expect(screen.getByText(/Version v1.2.0-beta.9 is available to download/i)).toBeInTheDocument();
       expect(screen.getByText("Download v1.2.0-beta.9")).toBeInTheDocument();
     });
 
@@ -147,10 +147,10 @@ describe("SettingsModal component", () => {
     );
 
     render(<SettingsModal onClose={vi.fn()} currentChannel="beta" onChannelChange={vi.fn()} />);
-    fireEvent.click(screen.getByText("Check for Updates Now"));
+    fireEvent.click(screen.getByText("Check for updates"));
 
     await waitFor(() => {
-      expect(screen.getByText(/You are up to date! \(v1.1.2 is the latest release\)/)).toBeInTheDocument();
+      expect(screen.getByText(/You have the latest version \(v1.1.2\)/)).toBeInTheDocument();
     });
     expect(screen.queryByText(/Download/)).not.toBeInTheDocument();
     vi.unstubAllGlobals();
@@ -179,11 +179,11 @@ describe("SettingsModal component", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Check for Updates Now"));
+    fireEvent.click(screen.getByText("Check for updates"));
 
     await waitFor(() => {
       expect(
-        screen.getByText(/No updater manifest found for this channel. Check https:\/\/github.com\/TheJonathanC\/vitae\/releases for updates./i)
+        screen.getByText(/Updates for this channel aren't published yet. You can check https:\/\/github.com\/TheJonathanC\/vitae\/releases instead./i)
       ).toBeInTheDocument();
     });
 

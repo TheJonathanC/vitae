@@ -37,7 +37,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         <div className="error-boundary" role="alert">
           <h2>{this.props.fallbackTitle || "Something went wrong"}</h2>
           <p>{this.state.error.message}</p>
-          <button type="button" className="btn-primary" onClick={() => this.setState({ error: null })}>
+          <button type="button" className="btn" onClick={() => this.setState({ error: null })}>
             Try again
           </button>
         </div>

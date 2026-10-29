@@ -14,10 +14,10 @@ function NewDocumentDialog({ onCreate, onCancel }: NewDocumentDialogProps) {
   const trimmed = title.trim();
 
   return (
-    <div className="setup-overlay" onClick={onCancel}>
+    <div className="dialog-backdrop" onClick={onCancel}>
       <form
         ref={dialogRef}
-        className="setup-modal new-document-modal"
+        className="dialog dialog-narrow"
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-document-title"
@@ -29,33 +29,36 @@ function NewDocumentDialog({ onCreate, onCancel }: NewDocumentDialogProps) {
         }}
         data-testid="new-document-dialog"
       >
-        <div className="setup-header">
-          <h2 id="new-document-title">New document</h2>
-          <button type="button" className="settings-close-btn" onClick={onCancel} aria-label="Close">
-            <IconX size={16} />
+        <div className="dialog-head">
+          <h2 id="new-document-title">New resume</h2>
+          <button type="button" className="icon-button" onClick={onCancel} aria-label="Close">
+            <IconX size={18} />
           </button>
         </div>
-        <div className="setup-content">
-          <div className="form-group">
-            <label htmlFor="new-document-name">Document title</label>
+        <div className="dialog-body">
+          <div className="field">
+            <label htmlFor="new-document-name">Name</label>
             <input
               id="new-document-name"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Software Engineer Resume 2026"
+              placeholder="Product designer, 2026"
+              aria-describedby="new-document-hint"
               data-autofocus
               maxLength={200}
             />
+            <p className="field-hint" id="new-document-hint">
+              Only you see this. It helps you tell your resumes apart.
+            </p>
           </div>
         </div>
-        <div className="setup-footer">
-          <div style={{ flex: 1 }} />
-          <button type="button" className="btn-secondary" onClick={onCancel}>
+        <div className="dialog-foot">
+          <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary" disabled={!trimmed}>
-            Create
+          <button type="submit" className="btn btn-primary" disabled={!trimmed}>
+            Create resume
           </button>
         </div>
       </form>

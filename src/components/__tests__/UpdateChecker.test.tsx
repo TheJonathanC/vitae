@@ -49,7 +49,7 @@ describe("UpdateChecker component", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("update-banner")).toBeInTheDocument();
-      expect(screen.getByText("BETA")).toBeInTheDocument();
+      expect(screen.getByText("Beta")).toBeInTheDocument();
       expect(
         screen.getByText(/Version 1.1.0-beta.2 is ready to install/i)
       ).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe("UpdateChecker component", () => {
 
     (invoke as any).mockResolvedValueOnce(undefined); // install_update_custom
 
-    fireEvent.click(screen.getByText("Update Now"));
+    fireEvent.click(screen.getByText("Update and restart"));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("install_update_custom", { channel: "beta" });

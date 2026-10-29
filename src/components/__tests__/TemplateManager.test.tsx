@@ -29,7 +29,8 @@ describe("TemplateManager component", () => {
     expect(screen.getByText("Modern Professional")).toBeInTheDocument();
     expect(screen.getByText("Classic Academic")).toBeInTheDocument();
     expect(screen.getByText("Minimalist Single-Column")).toBeInTheDocument();
-    expect(screen.getByText("Active Template")).toBeInTheDocument();
+    expect(screen.getByText("In use")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Templates" })).toBeInTheDocument();
   });
 
   it("calls onSelectTemplate when another template is chosen", () => {
@@ -80,10 +81,6 @@ describe("TemplateManager component", () => {
       />
     );
 
-    // Click Import Custom Template tab
-    fireEvent.click(screen.getByText(/Import Custom Template/i));
-    expect(screen.getByText("Upload Your LaTeX Resume Template")).toBeInTheDocument();
-
     // Fill in template details manually
     // Trigger file change mock
     const file = new File(
@@ -96,10 +93,12 @@ describe("TemplateManager component", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(screen.getByText("Save Template to Library")).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Import a template" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Template name")).toHaveValue("my_resume");
+      expect(screen.getByText("John Doe")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Save Template to Library"));
+    fireEvent.click(screen.getByText("Save and use template"));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_template", expect.any(Object));

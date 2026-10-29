@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import ResumeForm from "../ResumeForm";
 import { getDefaultResumeData } from "../../utils/templateEngine";
@@ -6,6 +6,77 @@ import { ResumeData } from "../../types";
 
 describe("ResumeForm component", () => {
   const initialData: ResumeData = getDefaultResumeData("Taylor Swift");
+
+  beforeAll(() => {
+    // jsdom doesn't implement scrolling
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("shows every section on one page with a nav that jumps between them", () => {
+    render(<ResumeForm data={initialData} onChange={vi.fn()} />);
+
+    for (const key of ["personal", "experience", "education", "projects", "skills", "custom"]) {
+      expect(screen.getByTestId(`section-card-${key}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`section-tab-${key}`)).toBeInTheDocument();
+    }
+    expect(screen.getByRole("heading", { level: 2, name: "Experience" })).toBeInTheDocument();
+    expect(screen.getByTestId("section-tab-experience")).toHaveTextContent("Experience, 2");
+
+    expect(screen.getByTestId("section-tab-personal")).toHaveAttribute("aria-current", "true");
+    fireEvent.click(screen.getByTestId("section-tab-skills"));
+    expect(screen.getByTestId("section-tab-skills")).toHaveAttribute("aria-current", "true");
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  });
+
+  it("reorders content sections but keeps Details first", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+
+    expect(screen.queryByTestId("btn-move-section-up-personal")).not.toBeInTheDocument();
+    expect(screen.getByTestId("btn-move-section-up-experience")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("btn-move-section-up-education"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sectionOrder: ["personal", "education", "experience", "projects", "skills", "custom"],
+      })
+    );
+  });
+
+  it("starts a new highlight on Enter and removes an empty one on Backspace", () => {
+    const onChange = vi.fn();
+    const data: ResumeData = {
+      ...initialData,
+      experience: [{ id: "e1", role: "Dev", company: "Co", bullets: ["Shipped it", ""] }],
+    };
+    render(<ResumeForm data={data} onChange={onChange} />);
+
+    fireEvent.keyDown(screen.getAllByLabelText("Highlight 1")[0], { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ experience: [expect.objectContaining({ bullets: ["Shipped it", "", ""] })] })
+    );
+
+    fireEvent.keyDown(screen.getAllByLabelText("Highlight 2")[0], { key: "Backspace" });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ experience: [expect.objectContaining({ bullets: ["Shipped it"] })] })
+    );
+  });
+
+  it("turns pasted line breaks in a highlight into spaces", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={initialData} onChange={onChange} />);
+    fireEvent.change(screen.getAllByLabelText("Highlight 1")[0], { target: { value: "Line one\nline two" } });
+    expect(onChange.mock.calls[0][0].experience[0].bullets[0]).toBe("Line one line two");
+  });
+
+  it("can always add an additional section", () => {
+    const onChange = vi.fn();
+    render(<ResumeForm data={{ ...initialData, customSections: [] }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("btn-add-custom-section"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ customSections: [expect.objectContaining({ title: "", bullets: [""] })] })
+    );
+  });
 
   it("renders personal info fields with populated data", () => {
     const onChange = vi.fn();
@@ -106,79 +177,6 @@ describe("ResumeForm component", () => {
     expect(screen.getByText("Security Clearance")).toBeInTheDocument();
   });
 
-  it("renders section navigation tabs with count badges and allows switching sections", () => {
-    const onChange = vi.fn();
-    render(<ResumeForm data={initialData} onChange={onChange} />);
-
-    // Verify all section tabs are present
-    expect(screen.getByTestId("section-tab-all")).toBeInTheDocument();
-    expect(screen.getByTestId("section-tab-personal")).toBeInTheDocument();
-    expect(screen.getByTestId("section-tab-experience")).toBeInTheDocument();
-    expect(screen.getByTestId("section-tab-education")).toBeInTheDocument();
-    expect(screen.getByTestId("section-tab-projects")).toBeInTheDocument();
-    expect(screen.getByTestId("section-tab-skills")).toBeInTheDocument();
-
-    // Default tab should be 'all'
-    expect(screen.getByTestId("section-tab-all")).toHaveClass("active");
-    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
-    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
-
-    // Switch to experience tab
-    fireEvent.click(screen.getByTestId("section-tab-experience"));
-    expect(screen.getByTestId("section-tab-experience")).toHaveClass("active");
-    expect(screen.getByTestId("section-tab-all")).not.toHaveClass("active");
-
-    // Only Experience section should be visible
-    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
-    expect(screen.queryByTestId("section-card-personal")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("section-card-education")).not.toBeInTheDocument();
-  });
-
-  it("supports sequential traversal via Previous and Next buttons", () => {
-    const onChange = vi.fn();
-    render(<ResumeForm data={initialData} onChange={onChange} />);
-
-    // Switch to Personal section
-    fireEvent.click(screen.getByTestId("section-tab-personal"));
-    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
-    expect(screen.queryByTestId("section-card-experience")).not.toBeInTheDocument();
-
-    // Click Next to go to Experience
-    const nextBtn = screen.getByTestId("btn-nav-next-personal");
-    fireEvent.click(nextBtn);
-
-    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
-    expect(screen.queryByTestId("section-card-personal")).not.toBeInTheDocument();
-
-    // Click Previous to return to Personal
-    const prevBtn = screen.getByTestId("btn-nav-prev-experience");
-    fireEvent.click(prevBtn);
-
-    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
-    expect(screen.queryByTestId("section-card-experience")).not.toBeInTheDocument();
-
-    // Click All Sections tab to view everything again
-    fireEvent.click(screen.getByTestId("section-tab-all"));
-    expect(screen.getByTestId("section-card-personal")).toBeInTheDocument();
-    expect(screen.getByTestId("section-card-experience")).toBeInTheDocument();
-    expect(screen.getByTestId("section-card-education")).toBeInTheDocument();
-  });
-
-  it("allows reordering sections in the visual form", () => {
-    const onChange = vi.fn();
-    render(<ResumeForm data={initialData} onChange={onChange} />);
-
-    // Click Move Up on the Experience section
-    const moveExpUpBtn = screen.getByTestId("btn-move-section-up-experience");
-    fireEvent.click(moveExpUpBtn);
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sectionOrder: ["experience", "personal", "education", "projects", "skills"],
-      })
-    );
-  });
-
   it("does not show contact-field reorder arrows (templates fix the contact order)", () => {
     render(<ResumeForm data={initialData} onChange={vi.fn()} />);
     expect(screen.queryByTestId("btn-move-personal-phone-up")).not.toBeInTheDocument();
@@ -187,19 +185,10 @@ describe("ResumeForm component", () => {
 
   it("associates every field label with its input", () => {
     render(<ResumeForm data={initialData} onChange={vi.fn()} />);
-    expect(screen.getByLabelText("Full Name *")).toHaveValue("Taylor Swift");
+    expect(screen.getByLabelText("Full name")).toHaveValue("Taylor Swift");
     expect(screen.getByLabelText("Email")).toHaveValue(initialData.personal.email);
-    expect(screen.getAllByLabelText("Role / Position")[0]).toHaveValue(initialData.experience[0].role);
-    expect(screen.getAllByLabelText("Bullet 1")[0]).toHaveValue(initialData.experience[0].bullets[0]);
-  });
-
-  it("uses a real button for section headers instead of nesting buttons in a clickable header", () => {
-    render(<ResumeForm data={initialData} onChange={vi.fn()} />);
-    const toggle = screen.getByRole("button", { name: /^Experience \(2\)$/ });
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByTestId("section-card-experience").querySelector('[role="button"]')).toBeNull();
+    expect(screen.getAllByLabelText("Role")[0]).toHaveValue(initialData.experience[0].role);
+    expect(screen.getAllByLabelText("Highlight 1")[0]).toHaveValue(initialData.experience[0].bullets[0]);
   });
 
   it("asks before removing an entry that has content", () => {
@@ -274,7 +263,7 @@ describe("ResumeForm component", () => {
     expect(screen.getByTestId("input-personal-name")).toBeDisabled();
     expect(screen.getByTestId("btn-add-experience")).toBeDisabled();
 
-    fireEvent.click(screen.getByText("Edit LaTeX Source"));
+    fireEvent.click(screen.getByText("Edit LaTeX source"));
     expect(onOpenSource).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("btn-regenerate-from-form"));
     expect(onRegenerate).toHaveBeenCalled();

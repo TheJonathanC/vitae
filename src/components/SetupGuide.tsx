@@ -1,10 +1,23 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/api/shell";
-import { IconCheck } from "./Icons";
 import { useDialog } from "../hooks/useDialog";
 
 interface SetupGuideProps {
   onClose: () => void;
+}
+
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        open(href).catch((err) => console.error("Failed to open URL in browser:", err));
+      }}
+    >
+      {children}
+    </a>
+  );
 }
 
 function SetupGuide({ onClose }: SetupGuideProps) {
@@ -16,220 +29,127 @@ function SetupGuide({ onClose }: SetupGuideProps) {
   const isMac = userAgent.includes("mac");
   const isLinux = !isWindows && !isMac;
 
-  const handleOpenUrl = async (url: string) => {
-    try {
-      await open(url);
-    } catch (err) {
-      console.error("Failed to open URL in browser:", err);
-    }
-  };
-
   const steps = [
     {
-      title: "Welcome to Vitae!",
+      title: "Vitae needs LaTeX",
       content: (
-        <div>
-          <p style={{ marginBottom: "16px" }}>
-            Vitae is a powerful LaTeX editor that compiles documents locally on
-            your computer.
+        <>
+          <p>
+            Vitae turns your resume into a PDF with LaTeX, the typesetting system used for
+            academic papers and books. It runs on your computer, so nothing is uploaded.
           </p>
-          <p style={{ marginBottom: "16px" }}>
-            To compile LaTeX documents, you need to install a LaTeX distribution
-            on your system.
-          </p>
-          <p style={{ color: "#858585" }}>
-            Don't worry - we'll guide you through the process!
-          </p>
-        </div>
+          <p>LaTeX isn't installed yet. The next step shows how to install it.</p>
+        </>
       ),
     },
     {
-      title: "Install LaTeX Distribution",
+      title: "Install LaTeX",
       content: (
-        <div>
+        <>
           {isWindows && (
             <>
-              <h3 style={{ marginBottom: "12px", color: "#cccccc" }}>
-                For Windows - MiKTeX (Recommended)
-              </h3>
-              <ol style={{ marginLeft: "20px", marginBottom: "16px" }}>
-                <li style={{ marginBottom: "8px" }}>
-                  Download MiKTeX from{" "}
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleOpenUrl("https://miktex.org/download");
-                    }}
-                    style={{ color: "#0e639c", textDecoration: "underline" }}
-                  >
-                    miktex.org/download
-                  </a>
+              <p>
+                Install <strong>MiKTeX</strong> (about 200 to 500 MB):
+              </p>
+              <ol className="steps-list">
+                <li>
+                  Download the installer from{" "}
+                  <ExternalLink href="https://miktex.org/download">miktex.org/download</ExternalLink>.
                 </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Run the installer (MiKTeX Setup)
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Choose "Install MiKTeX for all users" or "for yourself"
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  <strong>Important:</strong> Set "Install missing packages
-                  on-the-fly" to <strong>Yes</strong>
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Complete the installation
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  <strong>Restart Vitae</strong> after installation
+                <li>Run it and choose to install for yourself or for all users.</li>
+                <li>
+                  When asked about missing packages, choose <strong>Yes</strong> so they install
+                  automatically.
                 </li>
               </ol>
-              <p style={{ color: "#858585", fontSize: "0.9em" }}>
-                Installation size: ~200-500 MB
-              </p>
             </>
           )}
           {isMac && (
             <>
-              <h3 style={{ marginBottom: "12px", color: "#cccccc" }}>
-                For macOS - MacTeX
-              </h3>
-              <ol style={{ marginLeft: "20px", marginBottom: "16px" }}>
-                <li style={{ marginBottom: "8px" }}>
-                  Download MacTeX from{" "}
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleOpenUrl("https://www.tug.org/mactex/");
-                    }}
-                    style={{ color: "#0e639c", textDecoration: "underline" }}
-                  >
-                    tug.org/mactex
-                  </a>
+              <p>
+                Install <strong>MacTeX</strong> (about 4 to 5 GB):
+              </p>
+              <ol className="steps-list">
+                <li>
+                  Download it from{" "}
+                  <ExternalLink href="https://www.tug.org/mactex/">tug.org/mactex</ExternalLink>.
                 </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Run the MacTeX.pkg installer
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Follow the installation wizard
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  <strong>Restart Vitae</strong> after installation
-                </li>
+                <li>Open MacTeX.pkg and follow the installer.</li>
               </ol>
-              <p style={{ color: "#858585", fontSize: "0.9em" }}>
-                Installation size: ~4-5 GB
+              <p className="muted">
+                Prefer something smaller? <code>brew install --cask basictex</code> installs BasicTeX
+                (about 100 MB).
               </p>
             </>
           )}
           {isLinux && (
             <>
-              <h3 style={{ marginBottom: "12px", color: "#cccccc" }}>
-                For Linux - TeX Live
-              </h3>
-              <p style={{ marginBottom: "12px" }}>
-                Install using your package manager:
-              </p>
-              <div
-                style={{
-                  backgroundColor: "#1e1e1e",
-                  padding: "12px",
-                  borderRadius: "4px",
-                  fontFamily: "monospace",
-                  marginBottom: "16px",
-                }}
-              >
-                <div style={{ marginBottom: "8px" }}>
-                  # Ubuntu/Debian
-                  <br />
-                  sudo apt-get install texlive-latex-base texlive-latex-extra
-                </div>
-                <div style={{ marginBottom: "8px" }}>
-                  # Fedora
-                  <br />
-                  sudo dnf install texlive-scheme-medium
-                </div>
-                <div>
-                  # Arch Linux
-                  <br />
-                  sudo pacman -S texlive-core texlive-latexextra
-                </div>
-              </div>
-              <p style={{ marginBottom: "8px" }}>
-                <strong>Restart Vitae</strong> after installation
-              </p>
+              <p>Install TeX Live with your package manager:</p>
+              <pre className="command-block">
+                {`# Ubuntu or Debian
+sudo apt-get install texlive-latex-base texlive-latex-extra
+
+# Fedora
+sudo dnf install texlive-scheme-medium
+
+# Arch Linux
+sudo pacman -S texlive-core texlive-latexextra`}
+              </pre>
             </>
           )}
-        </div>
+        </>
       ),
     },
     {
-      title: "You're All Set!",
+      title: "Restart Vitae",
       content: (
-        <div>
-          <p style={{ marginBottom: "16px" }}>
-            Once you've installed the LaTeX distribution and restarted Vitae,
-            you'll be able to:
+        <>
+          <p>When the installation finishes, quit and reopen Vitae.</p>
+          <p>
+            The preview then updates as you type, and <strong>Export PDF</strong> saves a copy you
+            can send.
           </p>
-          <ul style={{ listStyle: "none", padding: 0, marginBottom: "16px" }}>
-            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-              <IconCheck size={14} /> <span>Create and edit LaTeX documents</span>
-            </li>
-            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-              <IconCheck size={14} /> <span>Compile to PDF with live preview</span>
-            </li>
-            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-              <IconCheck size={14} /> <span>Export PDFs to share with others</span>
-            </li>
-            <li style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-              <IconCheck size={14} /> <span>Work completely offline</span>
-            </li>
-          </ul>
-          <p style={{ color: "#858585" }}>
-            If you've already installed LaTeX, restart Vitae to begin!
-          </p>
-        </div>
+        </>
       ),
     },
   ];
 
+  const isLast = currentStep === steps.length - 1;
+
   return (
-    <div className="setup-overlay">
+    <div className="dialog-backdrop">
       <div
         ref={dialogRef}
-        className="setup-modal"
+        className="dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="setup-guide-title"
         tabIndex={-1}
       >
-        <div className="setup-header">
+        <div className="dialog-head">
           <h2 id="setup-guide-title">{steps[currentStep].title}</h2>
-          <div className="setup-progress">
+          <span className="step-count">
             Step {currentStep + 1} of {steps.length}
-          </div>
+          </span>
         </div>
-        <div className="setup-content">{steps[currentStep].content}</div>
-        <div className="setup-footer">
-          {currentStep > 0 && (
-            <button
-              onClick={() => setCurrentStep(currentStep - 1)}
-              className="btn-secondary"
-            >
+        <div className="dialog-body prose">{steps[currentStep].content}</div>
+        <div className="dialog-foot">
+          {currentStep > 0 ? (
+            <button type="button" onClick={() => setCurrentStep(currentStep - 1)} className="btn">
               Back
             </button>
+          ) : (
+            <button type="button" onClick={onClose} className="btn">
+              Not now
+            </button>
           )}
-          <div style={{ flex: 1 }}></div>
-          {currentStep < steps.length - 1 ? (
-            <button
-              onClick={() => setCurrentStep(currentStep + 1)}
-              className="btn-primary"
-            >
-              Next
+          {isLast ? (
+            <button type="button" onClick={onClose} className="btn btn-primary">
+              Done
             </button>
           ) : (
-            <button onClick={onClose} className="btn-primary">
-              Got It!
+            <button type="button" onClick={() => setCurrentStep(currentStep + 1)} className="btn btn-primary">
+              Next
             </button>
           )}
         </div>

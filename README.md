@@ -8,11 +8,11 @@ A modern, offline-first LaTeX editor built with Tauri, React, and TypeScript. In
 ## ✨ Features
 
 - 📝 **LaTeX Editor** - Monaco Editor with syntax highlighting and IntelliSense
-- 📊 **Live PDF Preview** - Split-pane view with real-time compilation
+- 📊 **Live PDF Preview** - Your resume updates beside the form as you type
 - 💾 **Local Storage** - SQLite database for document management
 - 🚀 **100% Offline** - No internet connection required
 - 📄 **PDF Export** - Save compiled PDFs anywhere on your system
-- 🎨 **Clean UI** - Modern dark theme with intuitive interface
+- 🎨 **Clean UI** - A simple form on one side, your page on the other; follows your system's light or dark theme
 - ⚡ **Fast & Lightweight** - Native desktop performance with Tauri
 - 🔄 **Auto-save** - Your changes are saved automatically
 
@@ -149,27 +149,24 @@ To enable automatic binary signing and generation of the updater signatures:
 
 ## 📖 Usage
 
-### Creating a Document
-1. Open the **Docs** drawer and click **+ New**
-2. Enter a document title
-3. Fill in the **Visual Form**, or switch to **LaTeX Source** to edit the generated LaTeX directly
+### Creating a resume
+1. Click the resume name at the top left and choose **New resume** (or **New resume** on the welcome screen)
+2. Give it a name only you will see, such as "Product designer, 2026"
+3. Fill in the form. The section bar jumps between Details, Experience, Education, Projects, Skills and Additional sections; in a highlight, Enter starts the next one
 
-Editing the LaTeX source by hand pauses the form, so later form changes can't overwrite your edits. Use **Regenerate from form** to discard the manual edits and go back to the form.
+Prefer LaTeX? Switch to **LaTeX source** at the top of the editor. Editing the source by hand pauses the form so later form changes can't overwrite your edits; **Replace source with form** discards the manual edits and goes back to the form.
 
-### Compiling to PDF
-1. Write your LaTeX content
-2. Click the **Compile** button in the toolbar
-3. PDF preview appears in the right pane
+### Previewing
+The preview on the right updates a moment after you stop typing. If a build fails, the bar under the preview says so; **See errors** lists what went wrong, with line numbers that are also marked in the LaTeX source. Turn off **Auto-update** to build only when you click **Update preview**.
 
-### Exporting PDF
-1. Compile your document first
-2. Click **Export PDF**
-3. Choose a location and save
+### Changing the look
+Click the template name at the top (for example **Modern Professional**) to switch templates or import your own `.tex` file. Your content stays the same.
 
-### Managing Documents
-- **Select**: Click any document in the sidebar
-- **Delete**: Click the 🗑️ icon on a document
-- **Auto-save**: Changes save automatically as you type
+### Exporting
+Click **Export PDF** in the bar under the preview and choose where to save it.
+
+### Managing resumes
+Open the menu under the resume name to switch between resumes, create a new one, or delete one. Changes save automatically as you type.
 
 ## 🗂️ Project Structure
 
