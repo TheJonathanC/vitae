@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Release helpers for .github/workflows/ci-cd.yml. Enforces the rules in RELEASING.md:
 //
 //   node scripts/release.mjs version            -> computes version/tag/channel, writes GITHUB_OUTPUT
