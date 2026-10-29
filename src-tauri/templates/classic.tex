@@ -10,6 +10,10 @@
 \titleformat{\section}{\large\bfseries\scshape}{}{0em}{}[\titlerule]
 \titlespacing{\section}{0pt}{10pt}{5pt}
 
+% Embeds a text mapping so ATS parsers and copy/paste read ligatures and accents correctly.
+\input{glyphtounicode}
+\pdfgentounicode=1
+
 \begin{document}
 \pagestyle{empty}
 

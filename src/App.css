@@ -1824,3 +1824,84 @@ h3 .tag {
   min-width: 0;
   flex: 1;
 }
+
+/* ATS check */
+.ats-verdict {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+}
+
+.ats-verdict.ats-pass {
+  color: var(--success);
+  background-color: var(--accent-soft);
+}
+
+.ats-verdict.ats-warn {
+  color: var(--warning);
+  background-color: var(--warning-soft);
+}
+
+.ats-verdict.ats-fail {
+  color: var(--danger);
+  background-color: var(--danger-soft);
+}
+
+.ats-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.ats-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.ats-item + .ats-item {
+  border-top: 1px solid var(--rule);
+}
+
+.ats-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.ats-item.ats-pass .ats-mark {
+  color: var(--success);
+  background-color: var(--accent-soft);
+}
+
+.ats-item.ats-warn .ats-mark {
+  color: var(--warning);
+  background-color: var(--warning-soft);
+}
+
+.ats-item.ats-fail .ats-mark {
+  color: var(--danger);
+  background-color: var(--danger-soft);
+}
+
+.ats-text {
+  display: grid;
+  min-width: 0;
+}
+
+.ats-title {
+  font-weight: 500;
+}
+
+.ats-detail {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}

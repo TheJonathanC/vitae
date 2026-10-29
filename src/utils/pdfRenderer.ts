@@ -64,3 +64,43 @@ export async function renderPdfPages(base64: string, cssWidth: number): Promise<
   }
   return pages;
 }
+
+interface TextItem {
+  str: string;
+  transform?: number[];
+}
+
+/** Joins pdf.js text runs into lines: a change in vertical position starts a new line. */
+export function joinTextItems(items: TextItem[]): string {
+  let out = "";
+  let lastY: number | undefined;
+  for (const item of items) {
+    if (!item.str) continue;
+    const y = item.transform?.[5];
+    if (lastY !== undefined && y !== undefined && Math.abs(y - lastY) > 2) {
+      out += "\n";
+    } else if (out && !out.endsWith("\n") && !out.endsWith(" ") && !item.str.startsWith(" ")) {
+      out += " ";
+    }
+    out += item.str;
+    if (y !== undefined) lastY = y;
+  }
+  return out.replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
+}
+
+/** The text an ATS parser would get out of the PDF, in reading order, and its page count. */
+export async function extractPdfText(base64: string): Promise<{ text: string; pages: number }> {
+  const pdf = await getDocument({ data: decodeBase64(base64), isEvalSupported: false }).promise;
+  try {
+    const pages: string[] = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      const content = await page.getTextContent();
+      pages.push(joinTextItems(content.items as TextItem[]));
+      page.cleanup();
+    }
+    return { text: pages.join("\n"), pages: pdf.numPages };
+  } finally {
+    await pdf.destroy();
+  }
+}

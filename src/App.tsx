@@ -9,6 +9,7 @@ import ResumeForm from "./components/ResumeForm";
 import TemplateManager from "./components/TemplateManager";
 import NewDocumentDialog, { NewResumeOptions } from "./components/NewDocumentDialog";
 import DetailsManager from "./components/DetailsManager";
+import AtsCheck from "./components/AtsCheck";
 import ErrorBoundary from "./components/ErrorBoundary";
 import BuildDetails from "./components/BuildDetails";
 import {
@@ -108,6 +109,7 @@ function App() {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showMyDetails, setShowMyDetails] = useState(false);
+  const [showAts, setShowAts] = useState(false);
   const [updateChannel, setUpdateChannel] = useState<string>(getStoredChannel);
 
   // Draggable Split Pane State
@@ -806,6 +808,14 @@ function App() {
           }}
         />
       )}
+      {showAts && currentDocument && (
+        <AtsCheck
+          documentId={currentDocument.id}
+          latexSource={currentDocument.content}
+          personal={resumeData.personal}
+          onClose={() => setShowAts(false)}
+        />
+      )}
       {showMyDetails && <DetailsManager documents={documents} onClose={() => setShowMyDetails(false)} />}
       {showSetup && (
         <SetupGuide
@@ -1104,6 +1114,16 @@ function App() {
                   {autoCompile ? "Try again" : "Update preview"}
                 </button>
               )}
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setShowAts(true)}
+                disabled={!hasPreviewForCurrent}
+                title="See how an applicant tracking system would read this PDF"
+                data-testid="btn-ats-check"
+              >
+                ATS check
+              </button>
               <button
                 type="button"
                 className="btn btn-primary"
