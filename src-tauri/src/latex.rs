@@ -314,6 +314,78 @@ fn run_tool_logged(
     Ok((out, stderr))
 }
 
+/// TeX breaks its output at 79 columns, which can cut a message mid-word. Joins those
+/// pieces back into the original lines.
+pub fn unwrap_log(output: &str) -> String {
+    let mut out = String::with_capacity(output.len());
+    let mut lines = output.lines().peekable();
+    while let Some(line) = lines.next() {
+        out.push_str(line);
+        if !(line.chars().count() == 79 && lines.peek().is_some()) {
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The font pdfTeX couldn't find, from `!pdfTeX error: ... (file NAME): Font NAME at 600
+/// not found`. That happens when a font's files are installed but its map entry isn't
+/// known yet.
+pub fn missing_font(output: &str) -> Option<String> {
+    unwrap_log(output).lines().find_map(|line| {
+        let error = &line[line.find("pdfTeX error")?..];
+        if !error.contains("not found") {
+            return None;
+        }
+        let name = error.split("(file ").nth(1)?.split(')').next()?.trim();
+        (!name.is_empty()).then(|| name.to_string())
+    })
+}
+
+/// When the font maps were last rebuilt for a given pdflatex, so a font that stays
+/// missing doesn't trigger a slow rebuild on every compile.
+static FONT_MAPS_REFRESHED: Mutex<Option<HashMap<PathBuf, Instant>>> = Mutex::new(None);
+const FONT_REFRESH_COOLDOWN: Duration = Duration::from_secs(10 * 60);
+
+/// Rebuilds the font database and map files so freshly installed fonts become visible.
+/// Returns whether anything ran.
+fn refresh_font_maps(bin: &LatexBinary, log_dir: &Path, id: &str) -> bool {
+    {
+        let mut guard = FONT_MAPS_REFRESHED.lock().unwrap_or_else(|e| e.into_inner());
+        let recent = guard.get_or_insert_with(HashMap::new);
+        if recent.get(&bin.path).is_some_and(|at| at.elapsed() < FONT_REFRESH_COOLDOWN) {
+            return false;
+        }
+        recent.insert(bin.path.clone(), Instant::now());
+    }
+    let log = log_dir.join(format!("{}.stderr", id));
+    let run = |tool: &str, args: &[&str]| {
+        let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        run_tool_logged(&tool_path(bin, tool), &args, TLMGR_INSTALL_TIMEOUT, &log).map_or(false, |(out, _)| out.success)
+    };
+    if bin.is_miktex {
+        let fndb = run("initexmf", &["--update-fndb"]);
+        let maps = run("initexmf", &["--mkmaps"]);
+        fndb || maps
+    } else {
+        run("updmap-user", &[])
+    }
+}
+
+pub fn missing_font_message(font: &str, bin: &LatexBinary) -> String {
+    if bin.is_miktex {
+        format!(
+            "LaTeX can't find the font `{}`. Vitae refreshed MiKTeX's font files, but it's still missing. Open MiKTeX Console, choose Tasks, run Refresh file name database and Refresh font map files, then compile again. If it persists, install the package that provides this font under Packages.",
+            font
+        )
+    } else {
+        format!(
+            "LaTeX can't find the font `{}`. Run `updmap-user` (or `sudo updmap-sys`) and compile again. If it persists, install the package that provides this font with tlmgr or your system's TeX package manager.",
+            font
+        )
+    }
+}
+
 pub fn mpm_update_db_args() -> Vec<String> {
     vec!["--update-db".into(), format!("--repository={}", MIKTEX_REPOSITORY)]
 }
@@ -580,6 +652,12 @@ pub fn compile(
         }
     }
 
+    // A font whose files are installed but that pdfTeX can't see yet: rebuild the font
+    // maps and try again.
+    if !pass.success && missing_font(&pass.stdout).is_some() && refresh_font_maps(bin, temp_dir, id) {
+        pass = run_pass()?;
+    }
+
     // Stale auxiliary files from an interrupted run can break the next compile.
     // Only then is a clean rebuild worth a second pdflatex run.
     if !pass.success && failed_in_aux_file(&pass.stdout, id) {
@@ -596,7 +674,12 @@ pub fn compile(
 
     let mut errors = parse_latex_errors(&pass.stdout);
     if !pass.success {
-        if let Some(file) = parse_missing_file(&pass.stdout) {
+        if let Some(font) = missing_font(&pass.stdout).filter(|_| parse_missing_file(&pass.stdout).is_none()) {
+            errors.insert(
+                0,
+                LatexError { line: None, message: missing_font_message(&font, bin), severity: "error".to_string() },
+            );
+        } else if let Some(file) = parse_missing_file(&pass.stdout) {
             // Prefer what mpm said; otherwise whatever MiKTeX printed during the compile.
             let reason = install_error
                 .clone()
@@ -661,6 +744,7 @@ pub fn compile(
 
 pub fn parse_latex_errors(output: &str) -> Vec<LatexError> {
     let mut errors = Vec::new();
+    let output = unwrap_log(output);
 
     for line in output.lines() {
         let trimmed = line.trim();
@@ -757,9 +841,14 @@ pub fn parse_latex_errors(output: &str) -> Vec<LatexError> {
             continue;
         }
 
-        // Parse errors starting with '! '
-        if let Some(rest) = trimmed.strip_prefix("! ") {
-            let message = rest.trim().to_string();
+        // Errors start with "! ", pdfTeX's own with "!pdfTeX error", and a fatal stop prints
+        // "==> Fatal error occurred" with no file or line in front of it.
+        let error_message = trimmed
+            .strip_prefix("! ")
+            .map(|rest| rest.trim().to_string())
+            .or_else(|| trimmed.starts_with("!pdfTeX error").then(|| trimmed.trim_start_matches('!').to_string()))
+            .or_else(|| trimmed.starts_with("==> Fatal error").then(|| trimmed.to_string()));
+        if let Some(message) = error_message {
             let already_exists = errors.iter().any(|e| {
                 e.severity == "error"
                     && (e.message == message
@@ -1046,6 +1135,97 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         assert!(pdf_is_fresh(&pdf, SystemTime::now()));
         let later = SystemTime::now() + Duration::from_secs(3600);
         assert!(!pdf_is_fresh(&pdf, later), "a PDF from before the compile started is stale");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    const FONT_FAILURE: &str = "\
+) | (see the transcript file for additional information)\r
+!pdfTeX error: pdflatex (file SourceSans3-Regular-tlf-ts1--base): Font SourceSa\r
+ns3-Regular-tlf-ts1--base at 600 not found\r
+ ==> Fatal error occurred, no output PDF file produced!\r
+";
+
+    #[test]
+    fn test_unwrap_log_joins_only_lines_broken_at_79_columns() {
+        let wrapped = format!("{}\nrest of line\nnext", "a".repeat(79));
+        assert_eq!(unwrap_log(&wrapped), format!("{}rest of line\nnext\n", "a".repeat(79)));
+        assert_eq!(unwrap_log("short\nlines\n"), "short\nlines\n");
+        assert_eq!(unwrap_log(&"a".repeat(79)), format!("{}\n", "a".repeat(79)), "nothing follows, so nothing to join");
+    }
+
+    #[test]
+    fn test_missing_font_is_found_even_when_the_log_wraps() {
+        assert_eq!(missing_font(FONT_FAILURE).as_deref(), Some("SourceSans3-Regular-tlf-ts1--base"));
+        assert_eq!(missing_font("! Undefined control sequence."), None);
+        assert_eq!(missing_font("!pdfTeX error: pdflatex (file x): something else"), None);
+    }
+
+    #[test]
+    fn test_pdftex_errors_and_fatal_stops_are_reported_as_errors() {
+        let errors = parse_latex_errors(FONT_FAILURE);
+        let messages: Vec<_> = errors.iter().filter(|e| e.severity == "error").map(|e| e.message.as_str()).collect();
+        assert!(messages.iter().any(|m| m.starts_with("pdfTeX error: pdflatex (file SourceSans3-Regular-tlf-ts1--base)")
+            && m.ends_with("at 600 not found")), "{:?}", messages);
+        assert!(messages.iter().any(|m| m.starts_with("==> Fatal error occurred")), "{:?}", messages);
+        assert_eq!(errors.len(), 2);
+    }
+
+    #[test]
+    fn test_missing_font_message_says_what_to_do() {
+        let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
+        let msg = missing_font_message("SourceSans3-Regular", &miktex);
+        assert!(msg.contains("SourceSans3-Regular") && msg.contains("Refresh font map files"));
+        let texlive = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: false };
+        assert!(missing_font_message("x", &texlive).contains("updmap-user"));
+    }
+
+    /// A MiKTeX stand-in whose pdflatex fails with a missing-font error until
+    /// `initexmf` has run, as happens after a font package is installed.
+    #[cfg(unix)]
+    fn fake_miktex_with_stale_font_maps(dir: &Path, initexmf_fixes_it: bool) -> LatexBinary {
+        use std::os::unix::fs::PermissionsExt;
+        let marker = dir.join("maps-rebuilt");
+        let write = |name: &str, body: String| {
+            let path = dir.join(name);
+            fs::write(&path, body).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        let pdflatex = write(
+            "pdflatex",
+            format!(
+                "#!/bin/sh\nfor last; do :; done\nif [ -e '{m}' ]; then echo pdf > \"${{last%.tex}}.pdf\"; exit 0; fi\necho '!pdfTeX error: pdflatex (file Demo-Font): Font Demo-Font at 600 not found'\necho ' ==> Fatal error occurred, no output PDF file produced!'\nexit 1\n",
+                m = marker.display()
+            ),
+        );
+        let touch = if initexmf_fixes_it { format!("touch '{}'", marker.display()) } else { "true".to_string() };
+        write("initexmf", format!("#!/bin/sh\n{}\nexit 0\n", touch));
+        LatexBinary { path: pdflatex, is_miktex: true }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_rebuilds_font_maps_and_retries_when_a_font_is_missing() {
+        let dir = std::env::temp_dir().join(format!("vitae-fonts-ok-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bin = fake_miktex_with_stale_font_maps(&dir, true);
+        let result = compile(&bin, &dir, "fonts-ok", "x", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        assert!(result.pdf_path.is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_explains_a_font_that_stays_missing() {
+        let dir = std::env::temp_dir().join(format!("vitae-fonts-bad-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bin = fake_miktex_with_stale_font_maps(&dir, false);
+        let result = compile(&bin, &dir, "fonts-bad", "x", Duration::from_secs(10)).unwrap();
+        assert!(!result.success);
+        let first = &result.errors[0];
+        assert_eq!(first.severity, "error");
+        assert!(first.message.contains("Demo-Font") && first.message.contains("Refresh font map files"), "{}", first.message);
         let _ = fs::remove_dir_all(&dir);
     }
 
