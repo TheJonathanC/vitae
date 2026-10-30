@@ -192,7 +192,7 @@ export interface Profile extends ProfileSpec {
 
 export interface AiSettingsView {
   has_key: boolean;
-  provider: "anthropic" | "openai" | null;
+  provider: "anthropic" | "openai" | "gemini" | null;
   provider_name: string | null;
   model: string | null;
 }
@@ -204,7 +204,7 @@ export interface AiModel {
 }
 
 export interface AiModels {
-  provider: "anthropic" | "openai";
+  provider: "anthropic" | "openai" | "gemini";
   provider_name: string;
   models: AiModel[];
 }

@@ -71,7 +71,7 @@ function AiSettings() {
     <div className="settings-section">
       <h3>AI assistant (optional)</h3>
       <p className="muted">
-        Add your own Anthropic or OpenAI API key and Vitae can suggest better wording for your bullets. You review every change before it's used, and nothing is sent unless you ask.
+        Add your own Anthropic, OpenAI or Google Gemini API key and Vitae can suggest better wording for your bullets. You review every change before it's used, and nothing is sent unless you ask.
       </p>
 
       {models ? (
@@ -132,7 +132,7 @@ function AiSettings() {
             spellCheck={false}
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="sk-ant-… or sk-…"
+            placeholder="sk-ant-…, sk-… or AIza…"
           />
           <div className="setup-actions">
             <button type="button" className="btn btn-primary" onClick={checkKey} disabled={busy || !keyInput.trim()}>
@@ -140,6 +140,12 @@ function AiSettings() {
             </button>
           </div>
         </div>
+      )}
+
+      {(models?.provider ?? settings?.provider) === "gemini" && (
+        <p className="field-hint">
+          On Google's free Gemini tier, the text you send may be used to improve Google's products. Check Google's terms for your plan.
+        </p>
       )}
 
       {message && (

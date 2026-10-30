@@ -12,7 +12,7 @@ A native, offline-first desktop app built with Tauri, React and TypeScript. Your
 - 🗂️ **Your details, saved once** - Personal info is shared by every resume. Experience, projects, education and skills live in a library you can add to and edit at any time.
 - 🎭 **Profiles** - Save a version of your resume for each kind of job (say "Backend engineer" and "Data analyst") with its own headline, summary and choice of entries.
 - 🎯 **Tailor to a job** - Pick a role, paste a job description, or both. Vitae chooses the entries and bullets that fit best, puts the strongest skills first, and shows which of the job's key terms your resume covers, which you have but left out, and which aren't in your details.
-- 🤖 **Optional AI wording help** - Add your own Anthropic or OpenAI API key, choose from the models your key can use, and Vitae suggests tighter wording. You review every change, and suggestions that add numbers or tools your original didn't mention start unticked.
+- 🤖 **Optional AI wording help** - Add your own Anthropic, OpenAI or Google Gemini API key, choose from the models your key can use, and Vitae suggests tighter wording. You review every change, and suggestions that add numbers or tools your original didn't mention start unticked.
 - ✅ **ATS check** - Reads your compiled PDF the way a parser does and reports on readable text, garbled characters, contact details, standard headings, dates and length.
 - 📄 **ATS-friendly templates** - Single-column layouts with extractable text. Import your own `.tex` template if you prefer.
 - 👀 **Live preview and export** - The page updates beside the form as you type. Export the PDF anywhere.
@@ -177,7 +177,7 @@ Click the template name at the top (for example **Modern Professional**) to swit
 Click **Export PDF** in the bar under the preview and choose where to save it.
 
 ### AI help (optional)
-Open **Settings → AI assistant**, paste an Anthropic (`sk-ant-…`) or OpenAI (`sk-…`) API key and choose **Check key**. Vitae asks the provider which models your key can use and recommends a balanced one. Pick a model and save. You can change the model or remove the key at any time.
+Open **Settings → AI assistant**, paste an Anthropic (`sk-ant-…`), OpenAI (`sk-…`) or Google Gemini (`AIza…`) API key and choose **Check key**. Vitae asks the provider which models your key can use and recommends a balanced one. Pick a model and save. You can change the model or remove the key at any time.
 
 ### LaTeX packages
 Open **Settings → Manage LaTeX packages** to see how much space your LaTeX installation uses and how much each package takes. Remove packages you don't need; a template that needs one will usually install it again.
@@ -190,6 +190,7 @@ Open **Settings → Manage LaTeX packages** to see how much space your LaTeX ins
 - **Local data.** Resumes, your details and profiles are stored in a SQLite database on your computer.
 - **AI help is opt-in.** Nothing leaves your computer unless you tick the AI option for a resume. Then the bullets you chose and the job description are sent to your provider. The request is made by Vitae's backend, so the key never reaches the app's web view.
 - **Your API key** is stored in `ai_settings.json` in Vitae's data folder, readable only by your account on macOS and Linux. It isn't encrypted. Remove it any time under **Settings → AI assistant**. Error messages never include the key.
+- **Provider terms.** What a provider does with the text you send is up to them. For example, on Google's free Gemini tier it may be used to improve their products, so check your plan's terms before sending anything sensitive.
 - **AI guardrails.** The prompt forbids adding facts, and Vitae drops answers for bullets it didn't ask about. Any suggestion that adds a number or named tool is flagged and unticked. These checks reduce the risk but can't replace reading what you submit.
 - **Compilation sandbox.** `pdflatex` runs with shell escape disabled and, on TeX Live and MacTeX, with `openin_any=p` and `openout_any=p`, so a document or imported template can't read or write files outside the compile directory (for example, it can't embed `~/.ssh` keys in a PDF). Each pass is stopped after 120 seconds so an infinite loop can't hang the app. MiKTeX doesn't honour `openin_any`; shell escape is still disabled there.
 - **Automatic package installs.** To build a template, Vitae may install missing packages from the official MiKTeX or TeX Live repositories.
@@ -281,7 +282,6 @@ Ideas:
 - [ ] Re-tailor an existing resume to a new job
 - [ ] Reorder entries within a profile
 - [ ] AI help for the summary line
-- [ ] More AI providers
 - [ ] Auto-updating installers for macOS and Linux
 - [ ] Cover letters from the same details
 - [ ] Spell checker

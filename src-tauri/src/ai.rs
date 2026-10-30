@@ -12,6 +12,7 @@ use std::time::Duration;
 
 const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1";
 const OPENAI_URL: &str = "https://api.openai.com/v1";
+const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const MAX_KEY_LEN: usize = 300;
 const MAX_JOB_CHARS: usize = 6_000;
@@ -23,6 +24,7 @@ const MAX_ITEMS: usize = 40;
 pub enum Provider {
     Anthropic,
     OpenAi,
+    Gemini,
 }
 
 impl Provider {
@@ -30,6 +32,7 @@ impl Provider {
         match self {
             Provider::Anthropic => "Anthropic",
             Provider::OpenAi => "OpenAI",
+            Provider::Gemini => "Google Gemini",
         }
     }
 }
@@ -58,6 +61,8 @@ pub fn detect_provider(key: &str) -> Option<Provider> {
         Some(Provider::Anthropic)
     } else if key.starts_with("sk-") {
         Some(Provider::OpenAi)
+    } else if key.starts_with("AIza") {
+        Some(Provider::Gemini)
     } else {
         None
     }
@@ -77,6 +82,39 @@ fn is_openai_chat_model(id: &str) -> bool {
     chat_family && !OPENAI_EXCLUDED.iter().any(|bad| id.contains(bad))
 }
 
+const GEMINI_EXCLUDED: &[&str] = &[
+    "embedding", "tts", "image", "live", "audio", "imagen", "veo", "computer-use", "robotics", "aqa", "learnlm",
+];
+
+/// Gemini lists no creation dates, so newer versions are ranked by the number in the
+/// name ("gemini-2.5-flash" -> 250), which is how Google numbers them.
+fn gemini_rank(id: &str) -> i64 {
+    id.strip_prefix("gemini-")
+        .and_then(|rest| rest.split(|c: char| c != '.' && !c.is_ascii_digit()).next())
+        .and_then(|version| version.parse::<f64>().ok())
+        .map_or(0, |v| (v * 100.0).round() as i64)
+}
+
+fn gemini_models(body: &Value) -> Vec<ModelInfo> {
+    body.get("models")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|m| {
+                    let id = m.get("name")?.as_str()?.strip_prefix("models/")?.to_string();
+                    let can_write = m
+                        .get("supportedGenerationMethods")
+                        .and_then(Value::as_array)
+                        .map_or(false, |methods| methods.iter().any(|x| x.as_str() == Some("generateContent")));
+                    let usable = can_write && id.starts_with("gemini-") && !GEMINI_EXCLUDED.iter().any(|bad| id.contains(bad));
+                    usable.then(|| ModelInfo { created: gemini_rank(&id), id, recommended: false })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn parse_created(value: &Value) -> i64 {
     match value {
         Value::Number(n) => n.as_i64().unwrap_or(0),
@@ -89,7 +127,10 @@ fn parse_created(value: &Value) -> i64 {
 /// Models the key can use for writing, newest first, with one marked as the sensible
 /// default: a balanced model rather than the biggest or the cheapest.
 pub fn parse_models(provider: Provider, body: &Value) -> Vec<ModelInfo> {
-    let mut models: Vec<ModelInfo> = body
+    let mut models: Vec<ModelInfo> = if provider == Provider::Gemini {
+        gemini_models(body)
+    } else {
+        body
         .get("data")
         .and_then(Value::as_array)
         .map(|items| {
@@ -100,6 +141,7 @@ pub fn parse_models(provider: Provider, body: &Value) -> Vec<ModelInfo> {
                     let usable = match provider {
                         Provider::Anthropic => id.starts_with("claude-"),
                         Provider::OpenAi => is_openai_chat_model(&id),
+                        Provider::Gemini => false,
                     };
                     usable.then(|| ModelInfo {
                         created: parse_created(m.get("created").or_else(|| m.get("created_at")).unwrap_or(&Value::Null)),
@@ -109,13 +151,24 @@ pub fn parse_models(provider: Provider, body: &Value) -> Vec<ModelInfo> {
                 })
                 .collect()
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+    };
     models.sort_by(|a, b| b.created.cmp(&a.created).then_with(|| a.id.cmp(&b.id)));
     models.dedup_by(|a, b| a.id == b.id);
 
     let preferred = match provider {
         Provider::Anthropic => ["sonnet", "haiku", "opus"].iter().find_map(|k| models.iter().position(|m| m.id.contains(k))),
         Provider::OpenAi => ["mini"].iter().find_map(|k| models.iter().position(|m| m.id.contains(k) && !m.id.contains("nano"))),
+        // A stable "flash" model balances quality and cost; fall back to previews, then "pro".
+        Provider::Gemini => {
+            let stable = |m: &ModelInfo| !m.id.contains("preview") && !m.id.contains("exp");
+            let flash = |m: &ModelInfo| m.id.contains("flash") && !m.id.contains("lite");
+            models
+                .iter()
+                .position(|m| flash(m) && stable(m))
+                .or_else(|| models.iter().position(flash))
+                .or_else(|| models.iter().position(|m| m.id.contains("pro") && stable(m)))
+        }
     };
     if let Some(index) = preferred.or(if models.is_empty() { None } else { Some(0) }) {
         models[index].recommended = true;
@@ -200,6 +253,13 @@ pub fn request_parts(provider: Provider, model: &str, system: &str, user: &str) 
                 "messages": [{ "role": "user", "content": user }],
             }),
         ),
+        Provider::Gemini => (
+            format!("{}/models/{}:generateContent", GEMINI_URL, model),
+            json!({
+                "systemInstruction": { "parts": [{ "text": system }] },
+                "contents": [{ "role": "user", "parts": [{ "text": user }] }],
+            }),
+        ),
         Provider::OpenAi => (
             format!("{}/chat/completions", OPENAI_URL),
             json!({
@@ -224,6 +284,18 @@ pub fn response_text(provider: Provider, body: &Value) -> Option<String> {
             .join("")
             .into(),
         Provider::OpenAi => body.get("choices")?.get(0)?.get("message")?.get("content")?.as_str().map(str::to_string),
+        Provider::Gemini => {
+            let text: String = body
+                .get("candidates")?
+                .get(0)?
+                .get("content")?
+                .get("parts")?
+                .as_array()?
+                .iter()
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .collect();
+            (!text.is_empty()).then_some(text)
+        }
     }
 }
 
@@ -300,6 +372,8 @@ fn with_auth(provider: Provider, request: reqwest::RequestBuilder, key: &str) ->
     match provider {
         Provider::Anthropic => request.header("x-api-key", key).header("anthropic-version", ANTHROPIC_VERSION),
         Provider::OpenAi => request.bearer_auth(key),
+        // In a header, not the URL, so the key can't end up in logs or error text.
+        Provider::Gemini => request.header("x-goog-api-key", key),
     }
 }
 
@@ -308,6 +382,8 @@ pub fn describe_failure(provider: Provider, status: Option<u16>, timed_out: bool
     let name = provider.label();
     match status {
         Some(401) => format!("{} rejected the API key. Check that it's correct and active.", name),
+        // Google answers a bad key with 400 rather than 401.
+        Some(400) if provider == Provider::Gemini => format!("{} rejected the request. Check that the API key is correct and the model is available to it.", name),
         Some(403) => format!("{} says this key isn't allowed to do that.", name),
         Some(404) => format!("{} doesn't have that model. Pick another one in Settings.", name),
         Some(429) => format!("{} is rate limiting this key or the account is out of credit. Try again later.", name),
@@ -331,6 +407,7 @@ pub async fn fetch_models(provider: Provider, key: &str) -> Result<Vec<ModelInfo
     let url = match provider {
         Provider::Anthropic => format!("{}/models?limit=100", ANTHROPIC_URL),
         Provider::OpenAi => format!("{}/models", OPENAI_URL),
+        Provider::Gemini => format!("{}/models?pageSize=200", GEMINI_URL),
     };
     let body = send_json(provider, with_auth(provider, client()?.get(url), key)).await?;
     let models = parse_models(provider, &body);
@@ -348,6 +425,9 @@ pub async fn rewrite(
     role: Option<&str>,
     items: &[RewriteItem],
 ) -> Result<Vec<RewriteItem>, String> {
+    if provider == Provider::Gemini && !model.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')) {
+        return Err("That model name isn't valid. Pick another one in Settings.".into());
+    }
     if items.is_empty() || items.len() > MAX_ITEMS {
         return Err(format!("Choose between 1 and {} bullets to improve.", MAX_ITEMS));
     }
@@ -381,7 +461,8 @@ mod tests {
         assert_eq!(detect_provider("sk-ant-api03-xyz"), Some(Provider::Anthropic));
         assert_eq!(detect_provider("sk-proj-abc"), Some(Provider::OpenAi));
         assert_eq!(detect_provider("sk-abc"), Some(Provider::OpenAi));
-        assert_eq!(detect_provider("AIzaSy"), None);
+        assert_eq!(detect_provider("AIzaSyA-example"), Some(Provider::Gemini));
+        assert_eq!(detect_provider("ya29.oauth-token"), None);
         assert_eq!(detect_provider(""), None);
     }
 
@@ -422,6 +503,51 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_gemini_models() {
+        let can = json!(["generateContent", "countTokens"]);
+        let body = json!({"models": [
+            {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": can},
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": can},
+            {"name": "models/gemini-2.5-flash-lite", "supportedGenerationMethods": can},
+            {"name": "models/gemini-3-flash-preview", "supportedGenerationMethods": can},
+            {"name": "models/gemini-2.0-flash", "supportedGenerationMethods": can},
+            {"name": "models/gemini-2.5-flash-image", "supportedGenerationMethods": can},
+            {"name": "models/gemini-2.5-flash-preview-tts", "supportedGenerationMethods": can},
+            {"name": "models/gemini-live-2.5-flash", "supportedGenerationMethods": can},
+            {"name": "models/gemini-embedding-001", "supportedGenerationMethods": ["embedContent"]},
+            {"name": "models/gemma-3-27b-it", "supportedGenerationMethods": can},
+            {"name": "models/imagen-4.0-generate-001", "supportedGenerationMethods": ["predict"]},
+            {"name": "models/gemini-pro-vision", "supportedGenerationMethods": ["countTokens"]}
+        ]});
+        let models = parse_models(Provider::Gemini, &body);
+        let ids: Vec<_> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-2.0-flash"],
+            "text models only, newest version first"
+        );
+        let recommended: Vec<_> = models.iter().filter(|m| m.recommended).map(|m| m.id.as_str()).collect();
+        assert_eq!(recommended, vec!["gemini-2.5-flash"], "a stable flash model, not a preview or lite");
+    }
+
+    #[test]
+    fn test_gemini_recommendation_fallbacks() {
+        let can = json!(["generateContent"]);
+        let only_preview = parse_models(Provider::Gemini, &json!({"models": [
+            {"name": "models/gemini-3-flash-preview", "supportedGenerationMethods": can},
+            {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": can}
+        ]}));
+        assert_eq!(only_preview.iter().find(|m| m.recommended).unwrap().id, "gemini-3-flash-preview");
+        let only_pro = parse_models(Provider::Gemini, &json!({"models": [{"name": "models/gemini-2.5-pro", "supportedGenerationMethods": can}]}));
+        assert_eq!(only_pro[0].id, "gemini-2.5-pro");
+        assert!(only_pro[0].recommended);
+        assert!(parse_models(Provider::Gemini, &json!({"models": "nope"})).is_empty());
+        assert_eq!(gemini_rank("gemini-2.5-flash"), 250);
+        assert_eq!(gemini_rank("gemini-3-pro-preview"), 300);
+        assert_eq!(gemini_rank("something-else"), 0);
+    }
+
+    #[test]
     fn test_parse_models_edge_cases() {
         assert!(parse_models(Provider::Anthropic, &json!({})).is_empty());
         assert!(parse_models(Provider::OpenAi, &json!({"data": "nope"})).is_empty());
@@ -442,6 +568,16 @@ mod tests {
         assert!(prompt.matches('y').count() == MAX_BULLET_CHARS, "each bullet is clipped");
         let bare = build_user_prompt("", None, &[item("a1", "t")]);
         assert!(!bare.contains("Job description") && !bare.contains("Target role"));
+    }
+
+    #[test]
+    fn test_gemini_model_names_cannot_break_out_of_the_url_path() {
+        let items = [item("a", "text")];
+        for bad in ["gemini/../x", "gemini-2.5-flash:evil", "gem ini", "a?b=c"] {
+            // Rejected before any request is made.
+            let result = tauri::async_runtime::block_on(rewrite(Provider::Gemini, "AIza-key", bad, "", None, &items));
+            assert_eq!(result.unwrap_err(), "That model name isn't valid. Pick another one in Settings.", "{}", bad);
+        }
     }
 
     #[test]
@@ -498,6 +634,13 @@ mod tests {
         assert_eq!(body["messages"][0], json!({"role": "system", "content": "SYS"}));
         assert_eq!(body["messages"][1]["role"], "user");
         assert!(body.get("temperature").is_none(), "newer OpenAI models reject custom temperatures");
+
+        let (url, body) = request_parts(Provider::Gemini, "gemini-2.5-flash", "SYS", "USER");
+        assert_eq!(url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent");
+        assert_eq!(body["systemInstruction"]["parts"][0]["text"], "SYS");
+        assert_eq!(body["contents"][0]["role"], "user");
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "USER");
+        assert!(!url.contains("key="), "the key goes in a header, never the URL");
     }
 
     #[test]
@@ -506,6 +649,11 @@ mod tests {
         assert_eq!(response_text(Provider::Anthropic, &anthropic).unwrap(), "Hello world");
         let openai = json!({"choices": [{"message": {"content": "Hi there"}}]});
         assert_eq!(response_text(Provider::OpenAi, &openai).unwrap(), "Hi there");
+        let gemini = json!({"candidates": [{"content": {"parts": [{"text": "Hello "}, {"text": "there"}]}, "finishReason": "STOP"}]});
+        assert_eq!(response_text(Provider::Gemini, &gemini).unwrap(), "Hello there");
+        let blocked = json!({"candidates": [{"finishReason": "SAFETY"}], "promptFeedback": {"blockReason": "SAFETY"}});
+        assert_eq!(response_text(Provider::Gemini, &blocked), None);
+        assert_eq!(response_text(Provider::Gemini, &json!({"candidates": [{"content": {"parts": []}}]})), None);
         assert_eq!(response_text(Provider::OpenAi, &json!({})), None);
         assert_eq!(response_text(Provider::Anthropic, &json!({"content": "x"})), None);
     }
@@ -518,6 +666,9 @@ mod tests {
             assert!(message.contains("Anthropic"));
         }
         assert!(describe_failure(Provider::OpenAi, Some(401), false).contains("rejected the API key"));
+        assert!(describe_failure(Provider::Gemini, Some(400), false).contains("API key is correct"));
+        assert!(describe_failure(Provider::Anthropic, Some(400), false).contains("returned an error (400)"));
+        assert!(describe_failure(Provider::Gemini, Some(429), false).contains("Google Gemini"));
         assert!(describe_failure(Provider::OpenAi, Some(429), false).contains("credit"));
         assert!(describe_failure(Provider::OpenAi, None, true).contains("too long"));
         assert!(describe_failure(Provider::OpenAi, None, false).contains("internet"));
@@ -539,6 +690,9 @@ mod tests {
         assert_eq!(load_settings(&path), settings);
 
         let view = settings.view();
+        let gemini = AiSettings { provider: Some(Provider::Gemini), model: Some("gemini-2.5-flash".into()), api_key: Some("AIza-secret".into()) };
+        assert_eq!(gemini.view().provider.as_deref(), Some("gemini"));
+        assert_eq!(gemini.view().provider_name.as_deref(), Some("Google Gemini"));
         assert_eq!(view, AiSettingsView { has_key: true, provider: Some("anthropic".into()), provider_name: Some("Anthropic".into()), model: Some("claude-sonnet-5-5".into()) });
         assert!(!serde_json::to_string(&view).unwrap().contains("secret"));
 

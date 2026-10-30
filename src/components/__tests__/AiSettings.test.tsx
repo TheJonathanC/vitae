@@ -52,6 +52,35 @@ describe("AiSettings", () => {
     expect(screen.queryByDisplayValue("sk-ant-secret")).not.toBeInTheDocument();
   });
 
+  it("supports Google Gemini keys, recommends a flash model and mentions the free-tier terms", async () => {
+    const gemini = {
+      provider: "gemini",
+      provider_name: "Google Gemini",
+      models: [
+        { id: "gemini-2.5-pro", created: 250, recommended: false },
+        { id: "gemini-2.5-flash", created: 250, recommended: true },
+      ],
+    };
+    backend({
+      ai_get_settings: () => none,
+      ai_validate_key: () => gemini,
+      ai_save_settings: () => ({ has_key: true, provider: "gemini", provider_name: "Google Gemini", model: "gemini-2.5-flash" }),
+    });
+    render(<AiSettings />);
+    expect(await screen.findByLabelText("API key")).toHaveAttribute("placeholder", expect.stringContaining("AIza"));
+    expect(screen.queryByText(/free Gemini tier/)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "AIzaSyExample" } });
+    fireEvent.click(screen.getByText("Check key"));
+    const select = (await screen.findByLabelText("Model for Google Gemini")) as HTMLSelectElement;
+    expect(select.value).toBe("gemini-2.5-flash");
+    expect(screen.getByText(/free Gemini tier/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Save"));
+    expect(await screen.findByText(/Connected to/)).toHaveTextContent("Google Gemini");
+    expect(screen.getByText(/free Gemini tier/)).toBeInTheDocument();
+  });
+
   it("shows why a key was rejected and stays on the key step", async () => {
     backend({
       ai_get_settings: () => none,

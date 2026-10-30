@@ -388,7 +388,7 @@ fn ai_get_settings(app: tauri::AppHandle) -> Result<ai::AiSettingsView, String> 
 async fn ai_validate_key(api_key: String) -> Result<AiModels, String> {
     let key = ai::clean_key(&api_key)?;
     let provider = ai::detect_provider(&key)
-        .ok_or("Vitae supports Anthropic keys (they start with sk-ant-) and OpenAI keys (sk-).")?;
+        .ok_or("Vitae supports Anthropic keys (sk-ant-…), OpenAI keys (sk-…) and Google Gemini keys (AIza…).")?;
     Ok(models_view(provider, ai::fetch_models(provider, &key).await?))
 }
 
