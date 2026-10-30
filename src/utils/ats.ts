@@ -37,8 +37,14 @@ export function checkLatexSource(source: string): AtsFinding[] {
   const code = stripComments(source);
   const findings: AtsFinding[] = [];
 
+  // XeLaTeX (which Vitae uses for fontspec templates) writes Unicode text by itself.
+  const unicodeEngine =
+    /%\s*!\s*TEX\s+(?:TS-)?program\s*=\s*xe(?:la)?tex/i.test(source) ||
+    /\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{[^}]*\bfontspec\b[^}]*\}/.test(code);
   findings.push(
-    /\\pdfgentounicode\s*=\s*1/.test(code)
+    unicodeEngine
+      ? finding("unicode-map", "pass", "Text is copyable", "XeLaTeX writes Unicode text, so ligatures and accents read correctly.")
+      : /\\pdfgentounicode\s*=\s*1/.test(code)
       ? finding("unicode-map", "pass", "Text is copyable", "The PDF embeds a text mapping, so ligatures and accents read correctly.")
       : finding(
           "unicode-map",

@@ -22,7 +22,7 @@ pub const COMPILE_TIMEOUT: Duration = Duration::from_secs(120);
 pub const LATEX_TEMP_EXTENSIONS: &[&str] = &[
     "tex", "pdf", "aux", "log", "out", "toc", "nav", "snm",
     "fls", "synctex.gz", "bbl", "blg", "idx", "ind", "ilg", "lot", "lof",
-    "bcf", "run.xml", "stderr",
+    "bcf", "run.xml", "stderr", "tools.log",
 ];
 
 /// Auxiliary files that are read back on the next run and can therefore carry
@@ -147,8 +147,9 @@ pub fn detect_pdflatex(refresh: bool) -> Option<LatexBinary> {
 ///
 /// The `.tex` file is passed relative to `work_dir`: `openin_any=p` rejects
 /// absolute paths, including the main input file.
-pub fn sandboxed_command(bin: &LatexBinary, work_dir: &Path, tex_name: &str) -> Command {
-    let mut cmd = create_silent_command(&bin.path);
+pub fn sandboxed_command(bin: &LatexBinary, engine: Engine, work_dir: &Path, tex_name: &str) -> Command {
+    let program = if engine == Engine::PdfLatex { bin.path.clone() } else { tool_path(bin, engine.program()) };
+    let mut cmd = create_silent_command(program);
     cmd.current_dir(work_dir)
         .arg("-interaction=nonstopmode")
         .arg("-halt-on-error")
@@ -216,34 +217,192 @@ pub fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<PassOutpu
     })
 }
 
+// ---------------------------------------------------------------------------
+// Engines
+// ---------------------------------------------------------------------------
+
+/// The TeX engine a document needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+    PdfLatex,
+    /// For documents that use system fonts through fontspec.
+    XeLatex,
+    /// Not run: LuaLaTeX's built-in Lua can read any file on disk, which would get
+    /// around the sandbox Vitae puts on templates.
+    LuaLatex,
+}
+
+impl Engine {
+    pub fn program(self) -> &'static str {
+        match self {
+            Engine::PdfLatex => "pdflatex",
+            Engine::XeLatex => "xelatex",
+            Engine::LuaLatex => "lualatex",
+        }
+    }
+}
+
+/// Everything before an unescaped `%`.
+fn strip_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] == b'%' && (i == 0 || bytes[i - 1] != b'\\') {
+            return &line[..i];
+        }
+    }
+    line
+}
+
+/// Whether `\usepackage{...}` or `\RequirePackage{...}` loads `package`.
+fn package_loaded(code: &str, package: &str) -> bool {
+    ["\\usepackage", "\\RequirePackage"].iter().any(|command| {
+        code.match_indices(command).any(|(i, _)| {
+            let rest = &code[i + command.len()..];
+            let Some(open) = rest.find('{') else { return false };
+            let Some(close) = rest[open..].find('}') else { return false };
+            rest[open + 1..open + close].split(',').any(|name| name.trim() == package)
+        })
+    })
+}
+
+/// The engine to start with. An explicit `% !TEX program = ...` line wins; packages
+/// that can only load under LuaLaTeX mean LuaLaTeX. Otherwise pdfLaTeX, and the
+/// compile switches to XeLaTeX if the log says a package needs it. Guessing from
+/// `fontspec` or `\directlua` in the source would misfire on templates that support
+/// several engines and only use those inside an engine check.
+pub fn required_engine(source: &str) -> Engine {
+    let magic = source.lines().take(30).find_map(|line| {
+        let lower = line.trim().to_lowercase();
+        let rest = lower.strip_prefix('%')?.trim_start().strip_prefix('!')?.trim_start().strip_prefix("tex")?.trim_start();
+        let rest = rest.strip_prefix("ts-").unwrap_or(rest);
+        let value = rest.strip_prefix("program")?.trim_start().strip_prefix('=')?.trim();
+        match value {
+            "xelatex" | "xetex" => Some(Engine::XeLatex),
+            "lualatex" | "luatex" => Some(Engine::LuaLatex),
+            "pdflatex" | "pdftex" | "latex" => Some(Engine::PdfLatex),
+            _ => None,
+        }
+    });
+    if let Some(engine) = magic {
+        return engine;
+    }
+    let code: String = source.lines().map(strip_comment).collect::<Vec<_>>().join("\n");
+    if package_loaded(&code, "luacode") || package_loaded(&code, "luatextra") {
+        return Engine::LuaLatex;
+    }
+    Engine::PdfLatex
+}
+
+/// pdfLaTeX stopped because something (often a template's own class file) needs
+/// XeLaTeX or LuaLaTeX.
+pub fn needs_unicode_engine(output: &str) -> bool {
+    let text = join_continuations(&unwrap_log(output)).to_lowercase();
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    [
+        "requires either xetex or luatex",
+        "requires xetex or luatex",
+        "requires luatex or xetex",
+        "xetex or luatex is required",
+        "requires xelatex",
+        "compiled with xelatex",
+    ]
+    .iter()
+    .any(|phrase| text.contains(phrase))
+}
+
+pub const LUALATEX_MESSAGE: &str = "This template needs LuaLaTeX. Vitae doesn't run LuaLaTeX because its built-in Lua can read any file on your computer, which would get around the protection Vitae puts on templates. Choose a template that works with pdfLaTeX or XeLaTeX.";
+
+pub fn engine_missing_message(engine: Engine, bin: &LatexBinary) -> String {
+    let fix = if bin.is_miktex {
+        "Install the `xetex` package in MiKTeX Console under Packages, then compile again.".to_string()
+    } else {
+        "Install it with `tlmgr install xetex`, or your system's XeTeX package (for example `texlive-xetex`), then compile again.".to_string()
+    };
+    format!("This template needs XeLaTeX ({} isn't installed). {}", engine.program(), fix)
+}
+
+// ---------------------------------------------------------------------------
+// What's missing
+// ---------------------------------------------------------------------------
+
 /// Most missing packages a single compile may install, so a template that pulls in
 /// a long chain of them still builds but a loop can't run away.
 const MAX_AUTO_INSTALLS: usize = 8;
+/// Upper bound on time spent installing during one compile.
+const MAX_INSTALL_TIME: Duration = Duration::from_secs(10 * 60);
+/// How long a failed install is remembered, so auto-compile doesn't retry it on every edit.
+const FAILED_INSTALL_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 const TLMGR_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 pub const MIKTEX_REPOSITORY: &str = "https://mirrors.ctan.org/systems/win32/miktex/tm/packages/";
 const TLMGR_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
-const TEX_SUPPORT_EXTENSIONS: &[&str] = &["sty", "cls", "clo", "def", "fd", "cfg"];
+const PACKAGE_EXTENSIONS: &[&str] = &["sty", "cls", "clo", "def", "fd", "cfg", "ldf", "tex"];
+const FONT_EXTENSIONS: &[&str] = &["tfm", "pfb", "enc", "vf", "map", "otf", "ttf", "afm"];
 
-/// The file named by `LaTeX Error: File `x.sty' not found.` (with or without a
-/// `-file-line-error` prefix). Names that aren't plain TeX support files are
-/// rejected because the result is later handed to `tlmgr`.
-pub fn parse_missing_file(output: &str) -> Option<String> {
-    output
-        .lines()
-        .filter(|line| line.contains("not found"))
-        .filter_map(|line| line.split("File `").nth(1)?.split('\'').next())
-        .find(|name| is_plain_tex_file(name))
-        .map(str::to_string)
+fn extension(name: &str) -> Option<&str> {
+    name.rsplit_once('.').map(|(_, ext)| ext)
 }
 
 fn is_plain_tex_file(name: &str) -> bool {
-    let ext_ok = name
-        .rsplit_once('.')
-        .map_or(false, |(stem, ext)| !stem.is_empty() && TEX_SUPPORT_EXTENSIONS.contains(&ext));
+    let ext_ok = name.rsplit_once('.').map_or(false, |(stem, ext)| {
+        !stem.is_empty() && (PACKAGE_EXTENSIONS.contains(&ext) || FONT_EXTENSIONS.contains(&ext))
+    });
     ext_ok
         && name.len() <= 100
         && !name.starts_with(['-', '.'])
         && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-'))
+}
+
+pub fn is_font_file(name: &str) -> bool {
+    extension(name).is_some_and(|ext| FONT_EXTENSIONS.contains(&ext))
+}
+
+/// A file LaTeX needs that a TeX distribution may provide, named the way the
+/// distribution ships it. Covers missing packages and classes (`File `x.sty' not
+/// found`), babel languages (`language definition file x.ldf`), font metrics
+/// (`Font ...=name at 10pt not loadable`) and font files pdfTeX can't open.
+/// Only plain file names are returned because they are handed to `tlmgr` and `mpm`.
+pub fn parse_missing_file(output: &str) -> Option<String> {
+    let text = unwrap_log(output);
+    for line in text.lines() {
+        let candidate = if line.contains("not found") && line.contains("File `") {
+            line.split("File `").nth(1).and_then(|r| r.split('\'').next()).map(str::to_string)
+        } else if line.contains("not loadable: Metric (TFM) file not found") {
+            line.split('=').nth(1).and_then(|r| r.split_whitespace().next()).map(|n| format!("{}.tfm", n))
+        } else if line.contains("pdfTeX error") && line.contains("cannot open") {
+            line.split("(file ").nth(1).and_then(|r| r.split(')').next()).map(|f| f.rsplit(['/', '\\']).next().unwrap_or(f).to_string())
+        } else {
+            None
+        };
+        if let Some(name) = candidate.filter(|n| is_plain_tex_file(n)) {
+            return Some(name);
+        }
+    }
+    // babel spreads this over several "(babel)" lines.
+    let joined = join_continuations(&text);
+    joined.split("language definition file").nth(1).and_then(|rest| {
+        let name = rest.split_whitespace().next()?.trim_end_matches(['.', ',']);
+        is_plain_tex_file(name).then(|| name.to_string())
+    })
+}
+
+/// A file the template refers to that no TeX distribution provides: an image, an
+/// `\input` of another file, and so on.
+pub fn parse_missing_resource(output: &str) -> Option<String> {
+    unwrap_log(output).lines().find_map(|line| {
+        if !line.contains("not found") {
+            return None;
+        }
+        let name = line.split("File `").nth(1)?.split('\'').next()?.trim();
+        (!name.is_empty() && !is_plain_tex_file(name)).then(|| name.to_string())
+    })
+}
+
+/// A system font fontspec couldn't find (XeLaTeX).
+pub fn parse_missing_system_font(output: &str) -> Option<String> {
+    let text = unwrap_log(output);
+    let rest = text.split("The font \"").nth(1)?;
+    let (name, after) = rest.split_once('"')?;
+    (after.trim_start().starts_with("cannot be found") && !name.trim().is_empty()).then(|| name.trim().to_string())
 }
 
 pub fn is_plain_package_name(name: &str) -> bool {
@@ -272,7 +431,46 @@ pub fn parse_tlmgr_search(output: &str, file: &str) -> Option<String> {
     None
 }
 
-/// A helper tool (`tlmgr`, `mpm`) that ships next to `pdflatex`.
+/// Files that live in a MiKTeX package with a different name. Everything else is
+/// in the package named after the file, which is MiKTeX's convention.
+const MIKTEX_PACKAGE_OF: &[(&str, &[&str])] = &[
+    ("tools", &["array", "calc", "dcolumn", "delarray", "enumerate", "afterpage", "bm", "ftnright", "hhline", "indentfirst", "layout", "longtable", "multicol", "rawfonts", "showkeys", "somedefs", "tabularx", "theorem", "trace", "varioref", "verbatim", "xr", "xspace"]),
+    ("graphics", &["graphicx", "graphics", "color", "keyval", "trig", "lscape", "epsfig"]),
+    ("amsfonts", &["amssymb", "amsfonts"]),
+    ("amscls", &["amsthm"]),
+    ("preprint", &["fullpage", "authblk", "balance"]),
+];
+
+/// The MiKTeX package to install for a missing file.
+pub fn miktex_package_for(file: &str) -> Option<String> {
+    let (stem, ext) = file.rsplit_once('.')?;
+    let package = if ext == "ldf" {
+        format!("babel-{}", stem)
+    } else {
+        MIKTEX_PACKAGE_OF
+            .iter()
+            .find(|(_, files)| files.contains(&stem))
+            .map_or_else(|| stem.to_string(), |(package, _)| package.to_string())
+    };
+    is_plain_package_name(&package).then_some(package)
+}
+
+// ---------------------------------------------------------------------------
+// Installing
+// ---------------------------------------------------------------------------
+
+/// Why a missing file couldn't be installed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallFailure {
+    /// No distribution has it: it's a file that came with the template.
+    NotPublished,
+    /// The installer can't be used here at all; the reason says what to do instead.
+    Blocked(String),
+    /// Anything else, as something the user can act on.
+    Other(String),
+}
+
+/// A helper tool (`tlmgr`, `mpm`, `initexmf`, `xelatex`) that ships next to `pdflatex`.
 fn tool_path(bin: &LatexBinary, stem: &str) -> PathBuf {
     let name = match (cfg!(windows), stem) {
         (true, "tlmgr") => "tlmgr.bat".to_string(),
@@ -293,7 +491,24 @@ fn tlmgr_path(bin: &LatexBinary) -> PathBuf {
 /// MiKTeX won't install packages on the fly until that has happened once.
 static MIKTEX_DB_REFRESHED: AtomicBool = AtomicBool::new(false);
 
-/// Runs a tool, keeping what it writes to stderr (MiKTeX reports problems there).
+/// Installs that failed recently, per pdflatex and file.
+static FAILED_INSTALLS: Mutex<Option<HashMap<(PathBuf, String), (Instant, InstallFailure)>>> = Mutex::new(None);
+
+fn recent_install_failure(bin: &LatexBinary, file: &str) -> Option<InstallFailure> {
+    let guard = FAILED_INSTALLS.lock().unwrap_or_else(|e| e.into_inner());
+    let (at, failure) = guard.as_ref()?.get(&(bin.path.clone(), file.to_string()))?;
+    (at.elapsed() < FAILED_INSTALL_COOLDOWN).then(|| failure.clone())
+}
+
+fn remember_install_failure(bin: &LatexBinary, file: &str, failure: &InstallFailure) {
+    FAILED_INSTALLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert((bin.path.clone(), file.to_string()), (Instant::now(), failure.clone()));
+}
+
+/// Runs a tool, keeping what it writes to stderr (MiKTeX and tlmgr report problems there).
 fn run_tool_logged(
     tool: &Path,
     args: &[String],
@@ -328,6 +543,26 @@ pub fn unwrap_log(output: &str) -> String {
     out
 }
 
+/// Packages continue long messages on lines that start with their name in brackets,
+/// such as `(babel)` or `(fontspec)`. Joins those onto the line they continue.
+fn join_continuations(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let is_continuation = trimmed.starts_with('(')
+            && trimmed.find(')').is_some_and(|close| close < 20 && trimmed[1..close].chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        if is_continuation && !out.is_empty() {
+            out.pop();
+            out.push(' ');
+            out.push_str(trimmed[trimmed.find(')').unwrap_or(0) + 1..].trim());
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
+}
+
 /// The font pdfTeX couldn't find, from `!pdfTeX error: ... (file NAME): Font NAME at 600
 /// not found`. That happens when a font's files are installed but its map entry isn't
 /// known yet.
@@ -342,18 +577,18 @@ pub fn missing_font(output: &str) -> Option<String> {
     })
 }
 
-/// When the font maps were last rebuilt for a given pdflatex, so a font that stays
-/// missing doesn't trigger a slow rebuild on every compile.
-static FONT_MAPS_REFRESHED: Mutex<Option<HashMap<PathBuf, Instant>>> = Mutex::new(None);
-const FONT_REFRESH_COOLDOWN: Duration = Duration::from_secs(10 * 60);
+/// When the TeX databases were last rebuilt for a given pdflatex, so a problem that
+/// persists doesn't trigger a slow rebuild on every compile.
+static DATABASES_REFRESHED: Mutex<Option<HashMap<PathBuf, Instant>>> = Mutex::new(None);
+const DATABASE_REFRESH_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 
-/// Rebuilds the font database and map files so freshly installed fonts become visible.
-/// Returns whether anything ran.
-fn refresh_font_maps(bin: &LatexBinary, log_dir: &Path, id: &str) -> bool {
+/// Rebuilds the file name database and font maps, so freshly installed files and fonts
+/// become visible. Returns whether anything ran.
+fn refresh_tex_databases(bin: &LatexBinary, log_dir: &Path, id: &str) -> bool {
     {
-        let mut guard = FONT_MAPS_REFRESHED.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = DATABASES_REFRESHED.lock().unwrap_or_else(|e| e.into_inner());
         let recent = guard.get_or_insert_with(HashMap::new);
-        if recent.get(&bin.path).is_some_and(|at| at.elapsed() < FONT_REFRESH_COOLDOWN) {
+        if recent.get(&bin.path).is_some_and(|at| at.elapsed() < DATABASE_REFRESH_COOLDOWN) {
             return false;
         }
         recent.insert(bin.path.clone(), Instant::now());
@@ -369,20 +604,6 @@ fn refresh_font_maps(bin: &LatexBinary, log_dir: &Path, id: &str) -> bool {
         fndb || maps
     } else {
         run("updmap-user", &[])
-    }
-}
-
-pub fn missing_font_message(font: &str, bin: &LatexBinary) -> String {
-    if bin.is_miktex {
-        format!(
-            "LaTeX can't find the font `{}`. Vitae refreshed MiKTeX's font files, but it's still missing. Open MiKTeX Console, choose Tasks, run Refresh file name database and Refresh font map files, then compile again. If it persists, install the package that provides this font under Packages.",
-            font
-        )
-    } else {
-        format!(
-            "LaTeX can't find the font `{}`. Run `updmap-user` (or `sudo updmap-sys`) and compile again. If it persists, install the package that provides this font with tlmgr or your system's TeX package manager.",
-            font
-        )
     }
 }
 
@@ -404,6 +625,7 @@ pub fn miktex_diagnostics(output: &str) -> Option<String> {
             || lower.contains("repository")
             || lower.contains("administrator")
             || lower.contains("not installed")
+            || lower.contains("unknown package")
             || lower.contains("cannot")
             || lower.contains("can't")
             || lower.contains("failed");
@@ -423,76 +645,160 @@ pub fn miktex_diagnostics(output: &str) -> Option<String> {
 
 /// MiKTeX's fallback when its on-the-fly installer gave up: refresh the package
 /// database once, then install the package with `mpm`. Returns the package name.
-fn install_with_mpm(bin: &LatexBinary, file: &str, log_dir: &Path, id: &str) -> Result<String, String> {
-    let package = file.rsplit_once('.').map_or(file, |(stem, _)| stem).to_string();
-    if !is_plain_package_name(&package) {
-        return Err("the package name isn't valid".into());
-    }
+fn install_with_mpm(bin: &LatexBinary, file: &str, log: &Path) -> Result<String, InstallFailure> {
+    let package = miktex_package_for(file).ok_or_else(|| InstallFailure::Other("the package name isn't valid".into()))?;
     let mpm = tool_path(bin, "mpm");
-    let log = log_dir.join(format!("{}.stderr", id));
     if !MIKTEX_DB_REFRESHED.load(Ordering::SeqCst) {
-        if let Ok((out, _)) = run_tool_logged(&mpm, &mpm_update_db_args(), TLMGR_INSTALL_TIMEOUT, &log) {
+        if let Ok((out, _)) = run_tool_logged(&mpm, &mpm_update_db_args(), TLMGR_INSTALL_TIMEOUT, log) {
             if out.success {
                 MIKTEX_DB_REFRESHED.store(true, Ordering::SeqCst);
             }
         }
     }
-    let (out, stderr) = run_tool_logged(&mpm, &mpm_install_args(&package), TLMGR_INSTALL_TIMEOUT, &log)?;
+    let (out, stderr) = run_tool_logged(&mpm, &mpm_install_args(&package), TLMGR_INSTALL_TIMEOUT, log).map_err(InstallFailure::Other)?;
     if out.success {
         return Ok(package);
     }
-    let detail = miktex_diagnostics(&format!("{}\n{}", stderr, out.stdout))
-        .unwrap_or_else(|| format!("mpm couldn't install `{}`", package));
-    Err(detail)
+    let detail = miktex_diagnostics(&format!("{}\n{}", stderr, out.stdout)).unwrap_or_else(|| format!("mpm couldn't install `{}`", package));
+    Err(InstallFailure::Other(detail))
 }
 
-fn run_tlmgr(tlmgr: &Path, args: &[&str], timeout: Duration) -> Result<PassOutput, String> {
-    let mut cmd = create_silent_command(tlmgr);
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-    run_with_timeout(cmd, timeout).map_err(|e| match e {
-        RunError::TimedOut => "tlmgr timed out".to_string(),
-        RunError::Spawn(msg) => format!("couldn't run tlmgr ({})", msg),
-    })
+/// Situations where tlmgr can't install anything, with what to do about them.
+pub fn tlmgr_problem(output: &str) -> Option<String> {
+    let lower = output.to_lowercase();
+    if lower.contains("running on debian") || lower.contains("tlmgr-on-debian") {
+        return Some("your TeX Live comes from your Linux distribution, which doesn't let tlmgr add packages. Install them with your package manager instead, for example `sudo apt install texlive-latex-extra texlive-fonts-extra`".into());
+    }
+    if lower.contains("older than remote repository") || lower.contains("cross release updates") {
+        return Some("your TeX Live is older than the online package repository, so tlmgr can't add packages to it. Update to the current TeX Live, or install the package with your system's package manager".into());
+    }
+    if lower.contains("tlmgr itself needs to be updated") {
+        return Some("tlmgr needs updating first: run `sudo tlmgr update --self`, then compile again".into());
+    }
+    None
 }
 
 /// Installs the TeX Live package that provides `file` and returns its name.
 /// Falls back to a per-user tree when the system one isn't writable.
-fn install_missing_file(bin: &LatexBinary, file: &str) -> Result<String, String> {
+fn install_missing_file(bin: &LatexBinary, file: &str, log: &Path) -> Result<String, InstallFailure> {
     let tlmgr = tlmgr_path(bin);
-    let found = run_tlmgr(&tlmgr, &["search", "--file", "--global", &format!("/{}", file)], TLMGR_SEARCH_TIMEOUT)?;
-    let package = parse_tlmgr_search(&found.stdout, file).ok_or_else(|| {
-        if found.success {
-            "it isn't in the TeX Live repository".to_string()
-        } else {
-            "tlmgr couldn't reach the TeX Live repository".to_string()
+    let run = |args: &[&str], timeout: Duration| {
+        let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        run_tool_logged(&tlmgr, &args, timeout, log)
+            .map(|(out, stderr)| (out.success, format!("{}\n{}", out.stdout, stderr)))
+            .map_err(InstallFailure::Other)
+    };
+    let (searched, text) = run(&["search", "--file", "--global", &format!("/{}", file)], TLMGR_SEARCH_TIMEOUT)?;
+    let Some(package) = parse_tlmgr_search(&text, file) else {
+        if let Some(problem) = tlmgr_problem(&text) {
+            return Err(InstallFailure::Blocked(problem));
         }
-    })?;
-    if run_tlmgr(&tlmgr, &["install", &package], TLMGR_INSTALL_TIMEOUT)?.success {
+        return Err(if searched {
+            InstallFailure::NotPublished
+        } else {
+            InstallFailure::Other("tlmgr couldn't reach the TeX Live repository; check your internet connection".into())
+        });
+    };
+    let (installed, text) = run(&["install", &package], TLMGR_INSTALL_TIMEOUT)?;
+    if installed {
         return Ok(package);
     }
-    let _ = run_tlmgr(&tlmgr, &["init-usertree"], TLMGR_SEARCH_TIMEOUT);
-    if run_tlmgr(&tlmgr, &["--usermode", "install", &package], TLMGR_INSTALL_TIMEOUT)?.success {
+    let first_problem = tlmgr_problem(&text);
+    let _ = run(&["init-usertree"], TLMGR_SEARCH_TIMEOUT);
+    let (installed, text) = run(&["--usermode", "install", &package], TLMGR_INSTALL_TIMEOUT)?;
+    if installed {
         return Ok(package);
     }
-    Err(format!("installing `{}` failed", package))
+    match first_problem.or_else(|| tlmgr_problem(&text)) {
+        Some(problem) => Err(InstallFailure::Blocked(problem)),
+        None => Err(InstallFailure::Other(format!("tlmgr couldn't install `{}`", package))),
+    }
 }
 
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
 /// A readable replacement for TeX's bare "File not found" when auto-install didn't help.
-pub fn missing_package_message(file: &str, bin: &LatexBinary, install_error: Option<&str>) -> String {
+pub fn missing_file_message(file: &str, bin: &LatexBinary, failure: Option<&InstallFailure>) -> String {
+    if failure == Some(&InstallFailure::NotPublished) {
+        return format!(
+            "`{}` isn't a published LaTeX package, so it most likely came with the template as a separate file. Vitae builds each resume from a single file and can't use it yet. Choose a template that doesn't need its own files.",
+            file
+        );
+    }
+    if let Some(InstallFailure::Blocked(reason)) = failure {
+        return format!("The LaTeX file `{}` is missing and Vitae couldn't install it automatically: {}.", file, reason);
+    }
     let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+    let reason = match failure {
+        Some(InstallFailure::Other(reason)) => Some(reason.as_str()),
+        _ => None,
+    };
     if bin.is_miktex {
-        let why = install_error.map(|e| format!(" MiKTeX said: {}", e)).unwrap_or_default();
+        let package = miktex_package_for(file).unwrap_or_else(|| stem.to_string());
+        let why = reason.map(|e| format!(" MiKTeX said: {}", e)).unwrap_or_default();
         format!(
-            "The LaTeX package file `{}` is missing and Vitae couldn't install it automatically.{} To fix it once, open MiKTeX Console, choose Updates and then Check for updates; or install `{}` under Packages. Then compile again.",
-            file, why, stem
+            "The LaTeX file `{}` is missing and Vitae couldn't install it automatically.{} To fix it once, open MiKTeX Console, choose Updates and then Check for updates; or install `{}` under Packages. Then compile again. If `{}` came with the template rather than from MiKTeX, Vitae can't use it yet.",
+            file, why, package, file
         )
     } else {
-        let why = install_error.map(|e| format!(" ({})", e)).unwrap_or_default();
+        let why = reason.map(|e| format!(" ({})", e)).unwrap_or_default();
+        let example = if is_font_file(file) { String::new() } else { format!(" (for example `tlmgr install {}`)", stem) };
         format!(
-            "The LaTeX package file `{}` is missing and Vitae couldn't install it automatically{}. Install it with `tlmgr install {}` (or your system's TeX package manager) and compile again.",
-            file, why, stem
+            "The LaTeX file `{}` is missing and Vitae couldn't install it automatically{}. Install the package that provides it{} and compile again.",
+            file, why, example
         )
     }
+}
+
+pub fn missing_font_message(font: &str, bin: &LatexBinary) -> String {
+    if bin.is_miktex {
+        format!(
+            "LaTeX can't find the font `{}`. Vitae refreshed MiKTeX's font files, but it's still missing. Open MiKTeX Console, choose Tasks, run Refresh file name database and Refresh font map files, then compile again. If it persists, install the package that provides this font under Packages.",
+            font
+        )
+    } else {
+        format!(
+            "LaTeX can't find the font `{}`. Run `updmap-user` (or `sudo updmap-sys`) and compile again. If it persists, install the package that provides this font with tlmgr or your system's TeX package manager.",
+            font
+        )
+    }
+}
+
+pub fn missing_system_font_message(font: &str) -> String {
+    format!(
+        "The template uses the font \"{}\", which isn't installed on this computer. Install the font, or change it in the template, and compile again.",
+        font
+    )
+}
+
+pub fn missing_resource_message(name: &str) -> String {
+    format!(
+        "The template needs `{}`, a separate file that isn't part of this resume. Vitae builds each resume from a single file, so remove the line that uses it or paste the file's contents into the template.",
+        name
+    )
+}
+
+/// The clearest explanation for a failed run, if Vitae recognises the cause.
+fn explain_failure(output: &str, bin: &LatexBinary, failure: Option<&InstallFailure>, stderr_log: &Path) -> Option<String> {
+    if let Some(font) = parse_missing_system_font(output) {
+        return Some(missing_system_font_message(&font));
+    }
+    if let Some(file) = parse_missing_file(output) {
+        if bin.is_miktex && is_font_file(&file) {
+            return Some(missing_font_message(&file, bin));
+        }
+        // Prefer what the installer said; otherwise whatever MiKTeX printed during the run.
+        let fallback = failure.cloned().or_else(|| {
+            fs::read_to_string(stderr_log).ok().and_then(|log| miktex_diagnostics(&log)).map(InstallFailure::Other)
+        });
+        return Some(missing_file_message(&file, bin, fallback.as_ref()));
+    }
+    if let Some(font) = missing_font(output) {
+        return Some(missing_font_message(&font, bin));
+    }
+    parse_missing_resource(output).map(|name| missing_resource_message(&name))
 }
 
 /// True when `pdf` was written during this compile (the clock slack covers coarse
@@ -505,16 +811,16 @@ fn pdf_is_fresh(pdf: &Path, started: SystemTime) -> bool {
         .unwrap_or(false)
 }
 
-/// Explains a pdflatex run that failed (non-zero exit) without printing a LaTeX
-/// error: the exit code, anything MiKTeX said, and the last lines of output.
-pub fn silent_failure_message(code: Option<i32>, stdout: &str, notes: Option<&str>, pdf_produced: bool) -> String {
+/// Explains a run that failed (non-zero exit) without printing a LaTeX error: the exit
+/// code, anything MiKTeX said, and the last lines of output.
+pub fn silent_failure_message(program: &str, code: Option<i32>, stdout: &str, notes: Option<&str>, pdf_produced: bool) -> String {
     let exit = code.map_or("an unknown code".to_string(), |c| format!("code {}", c));
     let tail: Vec<&str> = stdout.lines().map(str::trim).filter(|l| !l.is_empty()).rev().take(5).collect();
     let tail: String = tail.into_iter().rev().collect::<Vec<_>>().join(" | ");
     let mut message = if pdf_produced {
-        format!("pdflatex exited with {} but produced a PDF and reported no errors, so the PDF is shown.", exit)
+        format!("{} exited with {} but produced a PDF and reported no errors, so the PDF is shown.", program, exit)
     } else {
-        format!("pdflatex exited with {} without reporting a LaTeX error and produced no PDF.", exit)
+        format!("{} exited with {} without reporting a LaTeX error and produced no PDF.", program, exit)
     };
     if let Some(notes) = notes {
         message.push_str(&format!(" MiKTeX said: {}", notes));
@@ -543,6 +849,12 @@ pub fn failed_in_aux_file(output: &str, id: &str) -> bool {
         .any(|ext| output.contains(&format!("{}.{}:", id, ext)))
 }
 
+fn remove_aux_files(temp_dir: &Path, id: &str) {
+    for ext in AUX_EXTENSIONS {
+        let _ = fs::remove_file(temp_dir.join(format!("{}.{}", id, ext)));
+    }
+}
+
 pub fn forget_document(id: &str) {
     if let Ok(mut map) = LAST_COMPILE_HASH.lock() {
         if let Some(m) = map.as_mut() {
@@ -564,8 +876,21 @@ fn pdf_path_string(pdf_file: &Path) -> Result<String, String> {
         .replace('\\', "/"))
 }
 
+fn failed(message: String) -> CompilationResult {
+    CompilationResult {
+        success: false,
+        pdf_path: None,
+        errors: vec![LatexError { line: None, message, severity: "error".to_string() }],
+    }
+}
+
 /// Compiles `content` for document `id` inside `temp_dir`. The caller must have
 /// validated `id` (it is used to build file names).
+///
+/// Recovers on its own from what usually breaks imported templates: a template that
+/// needs XeLaTeX, missing packages, fonts and babel languages (installed through
+/// MiKTeX or tlmgr), stale font maps, stale auxiliary files and a slow first MiKTeX
+/// run. Whatever it can't fix is explained in plain words.
 pub fn compile(
     bin: &LatexBinary,
     temp_dir: &Path,
@@ -597,101 +922,129 @@ pub fn compile(
         });
     }
 
+    let mut engine = required_engine(content);
+    if engine == Engine::LuaLatex {
+        return Ok(failed(LUALATEX_MESSAGE.to_string()));
+    }
+
     fs::write(&tex_file, content).map_err(|e| format!("Failed to write tex file: {}", e))?;
     let started = SystemTime::now();
 
     // MiKTeX explains installer problems on stderr, which is otherwise discarded.
     let err_log = temp_dir.join(format!("{}.stderr", id));
-    let run_pass = || -> Result<PassOutput, String> {
-        let mut cmd = sandboxed_command(bin, temp_dir, &tex_name);
-        if bin.is_miktex {
-            if let Ok(file) = fs::File::create(&err_log) {
-                cmd.stderr(Stdio::from(file));
+    let tool_log = temp_dir.join(format!("{}.tools.log", id));
+    let retried_timeout = std::cell::Cell::new(false);
+    let run_pass = |engine: Engine| -> Result<PassOutput, String> {
+        loop {
+            let mut cmd = sandboxed_command(bin, engine, temp_dir, &tex_name);
+            if bin.is_miktex {
+                if let Ok(file) = fs::File::create(&err_log) {
+                    cmd.stderr(Stdio::from(file));
+                }
+            }
+            match run_with_timeout(cmd, timeout) {
+                Ok(pass) => return Ok(pass),
+                // MiKTeX downloads missing packages during the run and keeps what it
+                // fetched, so one more try usually finishes a slow first compile.
+                Err(RunError::TimedOut) if bin.is_miktex && !retried_timeout.replace(true) => continue,
+                Err(RunError::TimedOut) => {
+                    return Err(format!(
+                        "Compilation timed out after {} seconds. Check for an infinite loop (e.g. a macro that calls itself); if LaTeX is downloading packages, try again.",
+                        timeout.as_secs()
+                    ))
+                }
+                Err(RunError::Spawn(msg)) if engine == Engine::PdfLatex => {
+                    return Err(format!("Failed to run pdflatex: {}. Make sure pdflatex is installed and in PATH.", msg))
+                }
+                Err(RunError::Spawn(_)) => return Err(engine_missing_message(engine, bin)),
             }
         }
-        run_with_timeout(cmd, timeout).map_err(|e| match e {
-            RunError::TimedOut => format!(
-                "Compilation timed out after {} seconds. Check for an infinite loop (e.g. a macro that calls itself); if LaTeX is downloading packages, try again.",
-                timeout.as_secs()
-            ),
-            RunError::Spawn(msg) => format!(
-                "Failed to run pdflatex: {}. Make sure pdflatex is installed and in PATH.",
-                msg
-            ),
-        })
     };
 
     // Pass 1 is incremental: existing .aux/.out are kept so most edits need one pass.
-    let mut pass = run_pass()?;
+    let mut pass = run_pass(engine)?;
 
-    // Install whatever the log says is missing, then compile again. MiKTeX normally
-    // does this itself (--enable-installer); when it couldn't, ask mpm directly.
-    // TeX Live can't fetch packages mid-run at all, so it always takes this path.
+    // Fix what the log says and compile again, until it builds or nothing more can be
+    // done:
+    // - Packages (often inside a template's own class) that need XeLaTeX switch the
+    //   engine. pdfLaTeX's auxiliary files don't carry over, so that starts clean.
+    // - Missing files are installed. MiKTeX normally does this itself
+    //   (--enable-installer); when it couldn't, mpm is asked directly. TeX Live can't
+    //   fetch packages mid-run at all, so it always goes through tlmgr.
+    let deadline = Instant::now() + MAX_INSTALL_TIME;
     let mut installed: Vec<String> = Vec::new();
-    let mut install_error: Option<String> = None;
-    while !pass.success && installed.len() < MAX_AUTO_INSTALLS {
+    let mut install_error: Option<InstallFailure> = None;
+    while !pass.success {
+        if engine == Engine::PdfLatex && needs_unicode_engine(&pass.stdout) {
+            engine = Engine::XeLatex;
+            remove_aux_files(temp_dir, id);
+            pass = run_pass(engine)?;
+            continue;
+        }
+        if installed.len() >= MAX_AUTO_INSTALLS {
+            break;
+        }
         let Some(file) = parse_missing_file(&pass.stdout) else { break };
+        // MiKTeX fetches fonts itself; a font it still can't see is handled below.
+        if bin.is_miktex && is_font_file(&file) {
+            break;
+        }
+        if let Some(failure) = recent_install_failure(bin, &file) {
+            install_error = Some(failure);
+            break;
+        }
+        if Instant::now() >= deadline {
+            install_error = Some(InstallFailure::Other("installing packages is taking a long time; compile again to carry on".into()));
+            break;
+        }
         let attempt = if bin.is_miktex {
-            install_with_mpm(bin, &file, temp_dir, id)
+            install_with_mpm(bin, &file, &tool_log)
         } else {
-            install_missing_file(bin, &file)
+            install_missing_file(bin, &file, &tool_log)
         };
         match attempt {
             Ok(package) if !installed.contains(&package) => {
                 installed.push(package);
-                pass = run_pass()?;
+                pass = run_pass(engine)?;
             }
             Ok(package) => {
-                install_error = Some(format!("`{}` is installed but `{}` is still not found", package, file));
+                let failure = InstallFailure::Other(format!("`{}` is installed but `{}` is still not found", package, file));
+                remember_install_failure(bin, &file, &failure);
+                install_error = Some(failure);
                 break;
             }
-            Err(why) => {
-                install_error = Some(why);
+            Err(failure) => {
+                remember_install_failure(bin, &file, &failure);
+                install_error = Some(failure);
                 break;
             }
         }
     }
 
-    // A font whose files are installed but that pdfTeX can't see yet: rebuild the font
-    // maps and try again.
-    if !pass.success && missing_font(&pass.stdout).is_some() && refresh_font_maps(bin, temp_dir, id) {
-        pass = run_pass()?;
+    // Files or fonts that are installed but that TeX can't see yet: rebuild the file
+    // database and font maps and try again.
+    let invisible = missing_font(&pass.stdout).is_some()
+        || (bin.is_miktex && parse_missing_file(&pass.stdout).is_some_and(|f| is_font_file(&f)));
+    if !pass.success && invisible && refresh_tex_databases(bin, temp_dir, id) {
+        pass = run_pass(engine)?;
     }
 
     // Stale auxiliary files from an interrupted run can break the next compile.
-    // Only then is a clean rebuild worth a second pdflatex run.
+    // Only then is a clean rebuild worth a second run.
     if !pass.success && failed_in_aux_file(&pass.stdout, id) {
-        for ext in AUX_EXTENSIONS {
-            let _ = fs::remove_file(temp_dir.join(format!("{}.{}", id, ext)));
-        }
-        pass = run_pass()?;
+        remove_aux_files(temp_dir, id);
+        pass = run_pass(engine)?;
     }
 
     // With preserved aux files, at most one extra pass is needed for references/outlines.
     if pass.success && check_needs_rerun(&pass.stdout) {
-        pass = run_pass()?;
+        pass = run_pass(engine)?;
     }
 
     let mut errors = parse_latex_errors(&pass.stdout);
     if !pass.success {
-        if let Some(font) = missing_font(&pass.stdout).filter(|_| parse_missing_file(&pass.stdout).is_none()) {
-            errors.insert(
-                0,
-                LatexError { line: None, message: missing_font_message(&font, bin), severity: "error".to_string() },
-            );
-        } else if let Some(file) = parse_missing_file(&pass.stdout) {
-            // Prefer what mpm said; otherwise whatever MiKTeX printed during the compile.
-            let reason = install_error
-                .clone()
-                .or_else(|| fs::read_to_string(&err_log).ok().and_then(|log| miktex_diagnostics(&log)));
-            errors.insert(
-                0,
-                LatexError {
-                    line: None,
-                    message: missing_package_message(&file, bin, reason.as_deref()),
-                    severity: "error".to_string(),
-                },
-            );
+        if let Some(message) = explain_failure(&pass.stdout, bin, install_error.as_ref(), &err_log) {
+            errors.insert(0, LatexError { line: None, message, severity: "error".to_string() });
         }
     }
 
@@ -704,7 +1057,7 @@ pub fn compile(
         let notes = fs::read_to_string(&err_log).ok().and_then(|log| miktex_diagnostics(&log));
         errors.push(LatexError {
             line: None,
-            message: silent_failure_message(pass.code, &pass.stdout, notes.as_deref(), fresh_pdf),
+            message: silent_failure_message(engine.program(), pass.code, &pass.stdout, notes.as_deref(), fresh_pdf),
             severity: if fresh_pdf { "warning" } else { "error" }.to_string(),
         });
     }
@@ -1014,7 +1367,7 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
     #[test]
     fn test_sandboxed_command_flags() {
         let texlive = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: false };
-        let cmd = sandboxed_command(&texlive, Path::new("/tmp/work"), "doc.tex");
+        let cmd = sandboxed_command(&texlive, Engine::PdfLatex, Path::new("/tmp/work"), "doc.tex");
         let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert!(args.contains(&"-no-shell-escape".to_string()));
         assert_eq!(args.last().unwrap(), "doc.tex", "main file must be passed relative to the work dir");
@@ -1027,10 +1380,10 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
         assert_eq!(envs.get("openout_any"), Some(&Some("p".to_string())));
 
         let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
-        let cmd = sandboxed_command(&miktex, Path::new("/tmp/work"), "doc.tex");
+        let cmd = sandboxed_command(&miktex, Engine::PdfLatex, Path::new("/tmp/work"), "doc.tex");
         assert!(cmd.get_args().any(|a| a == "-disable-write18"));
         assert!(cmd.get_args().any(|a| a == "--enable-installer"), "MiKTeX should install missing packages itself");
-        let texlive_cmd = sandboxed_command(&texlive, Path::new("/tmp/work"), "doc.tex");
+        let texlive_cmd = sandboxed_command(&texlive, Engine::PdfLatex, Path::new("/tmp/work"), "doc.tex");
         assert!(!texlive_cmd.get_args().any(|a| a == "--enable-installer"));
     }
 
@@ -1070,11 +1423,11 @@ Package babel Warning: No hyphenation patterns were loaded for the language 'Lat
     #[test]
     fn test_silent_failure_message() {
         let out = "line one\n\n(some.sty)\nlast line\n";
-        let kept = silent_failure_message(Some(1), out, None, true);
+        let kept = silent_failure_message("pdflatex", Some(1), out, None, true);
         assert!(kept.contains("code 1") && kept.contains("the PDF is shown"));
         assert!(!kept.contains("Last output"));
-        let lost = silent_failure_message(None, out, Some("major issue: x"), false);
-        assert!(lost.contains("unknown code") && lost.contains("produced no PDF"));
+        let lost = silent_failure_message("xelatex", None, out, Some("major issue: x"), false);
+        assert!(lost.starts_with("xelatex exited") && lost.contains("unknown code") && lost.contains("produced no PDF"));
         assert!(lost.contains("MiKTeX said: major issue: x"));
         assert!(lost.contains("line one | (some.sty) | last line"));
     }
@@ -1229,6 +1582,273 @@ ns3-Regular-tlf-ts1--base at 600 not found\r
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // --- Engines -----------------------------------------------------------
+
+    #[test]
+    fn test_required_engine() {
+        let doc = |preamble: &str| format!("\\documentclass{{article}}\n{}\n\\begin{{document}}x\\end{{document}}", preamble);
+        assert_eq!(required_engine(&doc("")), Engine::PdfLatex);
+        // fontspec starts on pdfLaTeX: multi-engine templates load it only inside an
+        // engine check, and the compile switches when the log says it's needed.
+        assert_eq!(required_engine(&doc("\\usepackage{fontspec}")), Engine::PdfLatex);
+        assert_eq!(required_engine(&doc("\\ifdefined\\directlua\\else\\fi")), Engine::PdfLatex, "an engine check isn't a requirement");
+        assert_eq!(required_engine(&doc("\\usepackage{luacode}")), Engine::LuaLatex);
+        assert_eq!(required_engine(&doc("\\usepackage{xcolor, luacode}")), Engine::LuaLatex);
+        assert_eq!(required_engine(&doc("% \\usepackage{luacode}")), Engine::PdfLatex, "commented out");
+        assert_eq!(required_engine(&doc("\\usepackage{luacodex}")), Engine::PdfLatex, "whole names only");
+        assert_eq!(required_engine(&format!("% !TEX program = xelatex\n{}", doc(""))), Engine::XeLatex);
+        assert_eq!(required_engine(&format!("%!TEX TS-program = LuaLaTeX\n{}", doc(""))), Engine::LuaLatex);
+        assert_eq!(required_engine(&format!("% !TEX program = pdflatex\n{}", doc("\\usepackage{fontspec}"))), Engine::PdfLatex, "an explicit choice wins");
+        for template in ["modern.tex", "classic.tex", "minimal.tex"] {
+            let source = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("templates").join(template)).unwrap();
+            assert_eq!(required_engine(&source), Engine::PdfLatex, "{}", template);
+        }
+    }
+
+    #[test]
+    fn test_needs_unicode_engine_reads_fontspecs_wrapped_message() {
+        let log = "! Fatal Package fontspec Error: The fontspec package requires either XeTeX or\n(fontspec)                      LuaTeX.\n(fontspec)                      \n(fontspec)                      You must change your typesetting engine to,\n";
+        assert!(needs_unicode_engine(log));
+        assert!(needs_unicode_engine("! Package unicode-math Error: Cannot be run with pdfLaTeX!\n(unicode-math) Use XeLaTeX or LuaLaTeX instead.\nThis package requires XeTeX or LuaTeX"));
+        assert!(!needs_unicode_engine("! Undefined control sequence."));
+    }
+
+    // --- What's missing ------------------------------------------------------
+
+    #[test]
+    fn test_parse_missing_file_recognises_fonts_babel_and_inputs() {
+        let tfm = "! Font \\T1/SourceSansPro-TLF/m/n/10=SourceSansPro-Regular-tlf-t1 at 10.0pt not loadable: Metric (TFM) file not found.";
+        assert_eq!(parse_missing_file(tfm).as_deref(), Some("SourceSansPro-Regular-tlf-t1.tfm"));
+        let pfb = "!pdfTeX error: pdflatex (file ./SourceSans3-Regular.pfb): cannot open Type 1 font file for reading";
+        assert_eq!(parse_missing_file(pfb).as_deref(), Some("SourceSans3-Regular.pfb"));
+        let windows_pfb = "!pdfTeX error: pdflatex.exe (file C:\\Users\\Me\\fonts\\x.pfb): cannot open Type 1 font file for reading";
+        assert_eq!(parse_missing_file(windows_pfb).as_deref(), Some("x.pfb"));
+        let enc = "!pdfTeX error: pdflatex (file ./ts1.enc): cannot open encoding file for reading";
+        assert_eq!(parse_missing_file(enc).as_deref(), Some("ts1.enc"));
+        let babel = "! Package babel Error: Unknown option `english'. Either you misspelled it\n(babel)                or the language definition file english.ldf\n(babel)                was not found.";
+        assert_eq!(parse_missing_file(babel).as_deref(), Some("english.ldf"));
+        assert_eq!(parse_missing_file("! LaTeX Error: File `glyphtounicode.tex' not found.").as_deref(), Some("glyphtounicode.tex"));
+        assert_eq!(parse_missing_file("! LaTeX Error: File `photo.png' not found."), None);
+        assert_eq!(parse_missing_file("! LaTeX Error: File `sections/work.tex' not found."), None);
+    }
+
+    #[test]
+    fn test_parse_missing_resource_and_system_font() {
+        assert_eq!(parse_missing_resource("! LaTeX Error: File `photo.png' not found.").as_deref(), Some("photo.png"));
+        assert_eq!(parse_missing_resource("! LaTeX Error: File `sections/work.tex' not found.").as_deref(), Some("sections/work.tex"));
+        assert_eq!(parse_missing_resource("! LaTeX Error: File `titlesec.sty' not found."), None, "installable, not a resource");
+        let font = "! Package fontspec Error: The font \"Roboto\" cannot be found.\n(fontspec)                For immediate help type H <return>.";
+        assert_eq!(parse_missing_system_font(font).as_deref(), Some("Roboto"));
+        assert_eq!(parse_missing_system_font("! Undefined control sequence."), None);
+        assert!(missing_system_font_message("Roboto").contains("\"Roboto\""));
+        assert!(missing_resource_message("photo.png").contains("single file"));
+    }
+
+    #[test]
+    fn test_miktex_package_for() {
+        assert_eq!(miktex_package_for("tabularx.sty").as_deref(), Some("tools"));
+        assert_eq!(miktex_package_for("graphicx.sty").as_deref(), Some("graphics"));
+        assert_eq!(miktex_package_for("amssymb.sty").as_deref(), Some("amsfonts"));
+        assert_eq!(miktex_package_for("fullpage.sty").as_deref(), Some("preprint"));
+        assert_eq!(miktex_package_for("english.ldf").as_deref(), Some("babel-english"));
+        assert_eq!(miktex_package_for("sourcesanspro.sty").as_deref(), Some("sourcesanspro"));
+        assert_eq!(miktex_package_for("noextension"), None);
+    }
+
+    #[test]
+    fn test_tlmgr_problem_explains_common_dead_ends() {
+        let debian = "(running on Debian, switching to user mode!)\n(see /usr/share/doc/texlive-base/README.tlmgr-on-Debian.md)\ntlmgr: user mode not initialized, please read the documentation!";
+        assert!(tlmgr_problem(debian).unwrap().contains("package manager"));
+        let old = "tlmgr: Local TeX Live (2023) is older than remote repository (2025).\nCross release updates are only supported with\n  update-tlmgr-latest(.sh/.exe) --update";
+        assert!(tlmgr_problem(old).unwrap().contains("older than the online package repository"));
+        let selfupdate = "tlmgr itself needs to be updated.\nPlease do this via either\n  tlmgr update --self";
+        assert!(tlmgr_problem(selfupdate).unwrap().contains("tlmgr update --self"));
+        assert_eq!(tlmgr_problem("tlmgr: package repository https://mirror (verified)"), None);
+    }
+
+    // --- End to end with stand-in tools ---------------------------------------
+
+    #[cfg(unix)]
+    fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        fs::write(&path, format!("#!/bin/sh\n{}\n", body)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("vitae-e2e-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Writes the PDF named after the last argument (the .tex file) and succeeds.
+    #[cfg(unix)]
+    const WRITE_PDF: &str = "for last; do :; done\necho pdf > \"${last%.tex}.pdf\"\nexit 0";
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_switches_to_xelatex_when_a_class_needs_it() {
+        let dir = scratch("xelatex-switch");
+        let pdflatex = script(&dir, "pdflatex", &format!(
+            "touch '{}'\necho '! Fatal Package fontspec Error: The fontspec package requires either XeTeX or'\necho '(fontspec)                      LuaTeX.'\nexit 1",
+            dir.join("pdflatex-ran").display()
+        ));
+        script(&dir, "xelatex", WRITE_PDF);
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+        let result = compile(&bin, &dir, "switch", "\\documentclass{awesome-cv}", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        assert!(dir.join("pdflatex-ran").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_uses_xelatex_directly_when_the_document_says_so() {
+        let dir = scratch("xelatex-direct");
+        let pdflatex = script(&dir, "pdflatex", &format!("touch '{}'\nexit 1", dir.join("pdflatex-ran").display()));
+        script(&dir, "xelatex", WRITE_PDF);
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+        let result = compile(&bin, &dir, "direct", "% !TEX program = xelatex\n\\usepackage{fontspec}", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        assert!(!dir.join("pdflatex-ran").exists(), "pdflatex is never tried");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_explains_when_xelatex_is_not_installed() {
+        let dir = scratch("xelatex-missing");
+        let pdflatex = script(&dir, "pdflatex", "echo '! Fatal Package fontspec Error: The fontspec package requires either XeTeX or'\necho '(fontspec)                      LuaTeX.'\nexit 1");
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+        let err = compile(&bin, &dir, "nox", "\\usepackage{fontspec}", Duration::from_secs(10)).unwrap_err();
+        assert!(err.contains("needs XeLaTeX") && err.contains("tlmgr install xetex"), "{}", err);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_refuses_lualatex_without_running_anything() {
+        let dir = scratch("lualatex");
+        let bin = LatexBinary { path: dir.join("does-not-exist"), is_miktex: false };
+        let result = compile(&bin, &dir, "lua", "\\usepackage{luacode}\\begin{luacode}io.open('/etc/passwd')\\end{luacode}", Duration::from_secs(10)).unwrap();
+        assert!(!result.success);
+        assert_eq!(result.errors[0].message, LUALATEX_MESSAGE);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_installs_a_missing_font_through_tlmgr() {
+        let dir = scratch("tfm");
+        let installed = dir.join("installed");
+        let pdflatex = script(&dir, "pdflatex", &format!(
+            "if [ -e '{i}' ]; then {ok}; fi\necho '! Font \\T1/x/m/n/10=demofont-t1 at 10.0pt not loadable: Metric (TFM) file not found.'\nexit 1",
+            i = installed.display(), ok = WRITE_PDF.replace('\n', "; ")
+        ));
+        script(&dir, "tlmgr", &format!(
+            "case \"$1\" in\n  search) printf 'demofont:\\n\\ttexmf-dist/fonts/tfm/public/demofont/demofont-t1.tfm\\n' ;;\n  install) touch '{}' ;;\nesac\nexit 0",
+            installed.display()
+        ));
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+        let result = compile(&bin, &dir, "tfm", "x", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_explains_a_custom_class_and_does_not_retry_it_on_every_compile() {
+        let dir = scratch("custom-class");
+        let calls = dir.join("tlmgr-calls");
+        let pdflatex = script(&dir, "pdflatex", "echo \"! LaTeX Error: File \\`awesome-cv.cls' not found.\"\nexit 1");
+        script(&dir, "tlmgr", &format!("echo call >> '{}'\necho 'tlmgr: package repository https://mirror (verified)'\nexit 0", calls.display()));
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+
+        let first = compile(&bin, &dir, "custom", "\\documentclass{awesome-cv}", Duration::from_secs(10)).unwrap();
+        assert!(!first.success);
+        assert!(first.errors[0].message.contains("isn't a published LaTeX package"), "{}", first.errors[0].message);
+        let calls_after_first = fs::read_to_string(&calls).unwrap().lines().count();
+        assert_eq!(calls_after_first, 1, "one search");
+
+        let second = compile(&bin, &dir, "custom", "\\documentclass{awesome-cv} ", Duration::from_secs(10)).unwrap();
+        assert!(second.errors[0].message.contains("isn't a published LaTeX package"));
+        assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), calls_after_first, "the failure is remembered");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A class that first needs a package installed and only then turns out to need
+    /// XeLaTeX: both fixes happen in one compile, whatever order they show up in.
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_installs_then_switches_engine() {
+        let dir = scratch("install-then-switch");
+        let installed = dir.join("installed");
+        let pdflatex = script(&dir, "pdflatex", &format!(
+            "if [ -e '{i}' ]; then echo '! Fatal Package fontspec Error: The fontspec package requires either XeTeX or'; echo '(fontspec)  LuaTeX.'; exit 1; fi\necho \"! LaTeX Error: File \\`moresize.sty' not found.\"\nexit 1",
+            i = installed.display()
+        ));
+        script(&dir, "xelatex", WRITE_PDF);
+        script(&dir, "tlmgr", &format!(
+            "case \"$1\" in\n  search) printf 'moresize:\\n\\ttexmf-dist/tex/latex/moresize/moresize.sty\\n' ;;\n  install) touch '{}' ;;\nesac\nexit 0",
+            installed.display()
+        ));
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+        let result = compile(&bin, &dir, "both", "\\documentclass{fancycv}", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_font_file_messages_dont_invent_package_names() {
+        let texlive = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: false };
+        let msg = missing_file_message("demofont-t1.tfm", &texlive, None);
+        assert!(!msg.contains("tlmgr install demofont"), "{}", msg);
+        let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
+        let explained = explain_failure("! Font \\T1/x/m/n/10=demofont-t1 at 10.0pt not loadable: Metric (TFM) file not found.", &miktex, None, Path::new("/nonexistent"));
+        assert!(explained.unwrap().contains("can't find the font `demofont-t1.tfm`"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_explains_a_missing_image() {
+        let dir = scratch("image");
+        let pdflatex = script(&dir, "pdflatex", "echo \"! LaTeX Error: File \\`photo.png' not found.\"\nexit 1");
+        let bin = LatexBinary { path: pdflatex, is_miktex: false };
+        let result = compile(&bin, &dir, "image", "\\includegraphics{photo.png}", Duration::from_secs(10)).unwrap();
+        assert!(result.errors[0].message.contains("`photo.png`") && result.errors[0].message.contains("single file"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_gives_a_slow_first_miktex_run_one_more_try() {
+        let dir = scratch("miktex-slow");
+        let marker = dir.join("downloaded");
+        let pdflatex = script(&dir, "pdflatex", &format!(
+            "if [ -e '{m}' ]; then {ok}; fi\ntouch '{m}'\nsleep 5\nexit 0",
+            m = marker.display(), ok = WRITE_PDF.replace('\n', "; ")
+        ));
+        let bin = LatexBinary { path: pdflatex, is_miktex: true };
+        let result = compile(&bin, &dir, "slow", "x", Duration::from_secs(1)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_still_times_out_when_a_run_keeps_hanging() {
+        let dir = scratch("miktex-hang");
+        let pdflatex = script(&dir, "pdflatex", "sleep 5\nexit 0");
+        let bin = LatexBinary { path: pdflatex, is_miktex: true };
+        let err = compile(&bin, &dir, "hang", "x", Duration::from_secs(1)).unwrap_err();
+        assert!(err.contains("timed out"), "{}", err);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn test_mpm_args() {
         let install = mpm_install_args("sourcesanspro");
@@ -1252,10 +1872,13 @@ ns3-Regular-tlf-ts1--base at 600 not found\r
     #[test]
     fn test_miktex_message_includes_what_miktex_said_and_the_one_time_fix() {
         let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
-        let msg = missing_package_message("sourcesanspro.sty", &miktex, Some("major issue: not checked for updates"));
+        let said = InstallFailure::Other("major issue: not checked for updates".into());
+        let msg = missing_file_message("sourcesanspro.sty", &miktex, Some(&said));
         assert!(msg.contains("MiKTeX said: major issue: not checked for updates"));
         assert!(msg.contains("Check for updates"));
-        assert!(!missing_package_message("x.sty", &miktex, None).contains("MiKTeX said"));
+        assert!(msg.contains("came with the template"), "MiKTeX can't tell a custom file from a missing package");
+        assert!(!missing_file_message("x.sty", &miktex, None).contains("MiKTeX said"));
+        assert!(missing_file_message("tabularx.sty", &miktex, None).contains("install `tools`"));
     }
 
     #[test]
@@ -1269,10 +1892,20 @@ ns3-Regular-tlf-ts1--base at 600 not found\r
     #[test]
     fn test_missing_package_message_gives_a_next_step() {
         let texlive = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: false };
-        let msg = missing_package_message("sourcesanspro.sty", &texlive, Some("installing `sourcesanspro` failed"));
+        let failed = InstallFailure::Other("tlmgr couldn't install `sourcesanspro`".into());
+        let msg = missing_file_message("sourcesanspro.sty", &texlive, Some(&failed));
         assert!(msg.contains("tlmgr install sourcesanspro"));
+        assert!(msg.contains("(tlmgr couldn't install `sourcesanspro`)"));
         let miktex = LatexBinary { path: PathBuf::from("pdflatex"), is_miktex: true };
-        assert!(missing_package_message("sourcesanspro.sty", &miktex, None).contains("MiKTeX Console"));
+        assert!(missing_file_message("sourcesanspro.sty", &miktex, None).contains("MiKTeX Console"));
+        // A class that isn't in any repository came with the template.
+        let custom = missing_file_message("awesome-cv.cls", &texlive, Some(&InstallFailure::NotPublished));
+        assert!(custom.contains("isn't a published LaTeX package") && !custom.contains("tlmgr install"));
+        // When tlmgr can't be used at all, the message doesn't suggest it.
+        let blocked = InstallFailure::Blocked("your TeX Live comes from your Linux distribution".into());
+        let msg = missing_file_message("sourcesanspro.sty", &texlive, Some(&blocked));
+        assert!(msg.ends_with("automatically: your TeX Live comes from your Linux distribution."), "{}", msg);
+        assert!(!msg.contains("tlmgr install"));
     }
 
     #[cfg(unix)]

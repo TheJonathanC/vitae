@@ -16,7 +16,7 @@ A native, offline-first desktop app built with Tauri, React and TypeScript. Your
 - ✅ **ATS check** - Reads your compiled PDF the way a parser does and reports on readable text, garbled characters, contact details, standard headings, dates and length.
 - 📄 **ATS-friendly templates** - Single-column layouts with extractable text. Import your own `.tex` template if you prefer.
 - 👀 **Live preview and export** - The page updates beside the form as you type. Export the PDF anywhere.
-- 🧰 **LaTeX set up for you** - One-click MiKTeX install on Windows, matching instructions on macOS and Linux, automatic installation of missing packages, and a package manager that shows what takes up space.
+- 🧰 **LaTeX set up for you** - One-click MiKTeX install on Windows, matching instructions on macOS and Linux, and a package manager that shows what takes up space. Imported templates just work in more cases: missing packages, fonts and languages are installed automatically, templates that need XeLaTeX are detected, and anything Vitae can't fix is explained in plain words.
 - 🔒 **Local by default** - Everything is stored on your computer. Nothing is uploaded unless you use AI help.
 - 🔄 **Updates** - Stable and beta channels, with in-app updates on Windows.
 
@@ -192,7 +192,7 @@ Open **Settings → Manage LaTeX packages** to see how much space your LaTeX ins
 - **Your API key** is stored in `ai_settings.json` in Vitae's data folder, readable only by your account on macOS and Linux. It isn't encrypted. Remove it any time under **Settings → AI assistant**. Error messages never include the key.
 - **Provider terms.** What a provider does with the text you send is up to them. For example, on Google's free Gemini tier it may be used to improve their products, so check your plan's terms before sending anything sensitive.
 - **AI guardrails.** The prompt forbids adding facts, and Vitae drops answers for bullets it didn't ask about. Any suggestion that adds a number or named tool is flagged and unticked. These checks reduce the risk but can't replace reading what you submit.
-- **Compilation sandbox.** `pdflatex` runs with shell escape disabled and, on TeX Live and MacTeX, with `openin_any=p` and `openout_any=p`, so a document or imported template can't read or write files outside the compile directory (for example, it can't embed `~/.ssh` keys in a PDF). Each pass is stopped after 120 seconds so an infinite loop can't hang the app. MiKTeX doesn't honour `openin_any`; shell escape is still disabled there.
+- **Compilation sandbox.** `pdflatex` runs with shell escape disabled and, on TeX Live and MacTeX, with `openin_any=p` and `openout_any=p`, so a document or imported template can't read or write files outside the compile directory (for example, it can't embed `~/.ssh` keys in a PDF). Each pass is stopped after 120 seconds so an infinite loop can't hang the app. MiKTeX doesn't honour `openin_any`; shell escape is still disabled there. Templates that need XeLaTeX (for example ones that use system fonts through `fontspec`) are compiled with XeLaTeX under the same restrictions. LuaLaTeX isn't run at all, because its built-in Lua can read any file on your computer.
 - **Automatic package installs.** To build a template, Vitae may install missing packages from the official MiKTeX or TeX Live repositories.
 - **MiKTeX setup.** The one-click installer downloads MiKTeX's own setup tool over HTTPS and runs it in user mode. That tool isn't code-signed, so the download's integrity rests on HTTPS and MiKTeX's own package checks.
 

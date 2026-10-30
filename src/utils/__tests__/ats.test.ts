@@ -44,6 +44,12 @@ describe("checkLatexSource", () => {
     expect(status(checkLatexSource(base + "\\begin{tabular*}{\\textwidth}{l}"), "tables")).toBe("warn");
   });
 
+  it("doesn't ask XeLaTeX templates for a pdfTeX text mapping", () => {
+    expect(status(checkLatexSource("\\usepackage{fontspec}\\begin{document}x"), "unicode-map")).toBe("pass");
+    expect(status(checkLatexSource("% !TEX program = xelatex\n\\begin{document}x"), "unicode-map")).toBe("pass");
+    expect(status(checkLatexSource("% \\usepackage{fontspec}\n\\begin{document}x"), "unicode-map")).toBe("warn");
+  });
+
   it("does not flag things that are only in comments", () => {
     expect(status(checkLatexSource(base + "\n% \\includegraphics{x.png}"), "graphics")).toBe("pass");
   });
