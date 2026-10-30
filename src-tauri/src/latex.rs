@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Read;
@@ -577,6 +577,99 @@ pub fn missing_font(output: &str) -> Option<String> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Font maps that were installed but never switched on
+// ---------------------------------------------------------------------------
+
+/// Map files pdfTeX needs for fonts whose map isn't enabled in the installation, per
+/// pdflatex. Remembered for the session so later compiles work on the first pass.
+static EXTRA_MAP_FILES: Mutex<Option<HashMap<PathBuf, BTreeSet<String>>>> = Mutex::new(None);
+
+fn known_map_files(bin: &LatexBinary) -> BTreeSet<String> {
+    EXTRA_MAP_FILES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|maps| maps.get(&bin.path).cloned())
+        .unwrap_or_default()
+}
+
+/// Remembers `maps` for `bin`; returns whether any were new.
+fn remember_map_files(bin: &LatexBinary, maps: &[String]) -> bool {
+    let mut guard = EXTRA_MAP_FILES.lock().unwrap_or_else(|e| e.into_inner());
+    let known = guard.get_or_insert_with(HashMap::new).entry(bin.path.clone()).or_default();
+    maps.iter().fold(false, |added, map| known.insert(map.clone()) || added)
+}
+
+/// The document as pdfTeX should see it: `\pdfmapfile` lines for extra maps go in
+/// front of the first line, so error line numbers still match the user's source.
+pub fn with_map_files(content: &str, maps: &BTreeSet<String>) -> String {
+    let prefix: String = maps.iter().map(|m| format!("\\pdfmapfile{{+{}}}", m)).collect();
+    format!("{}{}", prefix, content)
+}
+
+/// Where the installation keeps `font`'s metrics, via kpsewhich.
+fn find_font_metrics(bin: &LatexBinary, font: &str, log: &Path) -> Option<PathBuf> {
+    let file = format!("{}.tfm", font);
+    if !is_plain_tex_file(&file) {
+        return None;
+    }
+    let (out, _) = run_tool_logged(&tool_path(bin, "kpsewhich"), &[file], TLMGR_SEARCH_TIMEOUT, log).ok()?;
+    let path = PathBuf::from(out.stdout.lines().next()?.trim());
+    (out.success && path.is_file()).then_some(path)
+}
+
+fn map_lists_font(map: &Path, font: &str) -> bool {
+    let Ok(text) = fs::read_to_string(map) else { return false };
+    text.lines().any(|line| {
+        line.strip_prefix(font)
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+    })
+}
+
+fn map_files_in(dir: &Path, depth: usize) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(t) if t.is_dir() && depth > 0 => found.extend(map_files_in(&path, depth - 1)),
+            Ok(t) if t.is_file() && path.extension().is_some_and(|e| e == "map") => found.push(path),
+            _ => {}
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Map files in the same installation that list `font`. A font package keeps its
+/// metrics in `fonts/tfm/<supplier>/<package>/` and its maps in
+/// `fonts/map/{dvips,pdftex}/<package>/`, but the map's own name can be anything
+/// (sourcesans ships `SourceSansThree.map`), so the files are read to find it. Falls
+/// back to every map in that tree.
+pub fn map_files_for_font(tfm: &Path, font: &str) -> Vec<String> {
+    let Some(fonts_dir) = tfm.ancestors().find(|dir| dir.file_name().is_some_and(|n| n == "fonts")) else {
+        return Vec::new();
+    };
+    let package = tfm.parent().and_then(Path::file_name);
+    let map_root = fonts_dir.join("map");
+    let near: Vec<PathBuf> = package
+        .map(|package| ["dvips", "pdftex"].iter().flat_map(|kind| map_files_in(&map_root.join(kind).join(package), 0)).collect())
+        .unwrap_or_default();
+    let matching = |maps: Vec<PathBuf>| -> Vec<String> {
+        maps.into_iter()
+            .filter(|map| map_lists_font(map, font))
+            .filter_map(|map| map.file_name()?.to_str().map(str::to_string))
+            .filter(|name| is_plain_tex_file(name))
+            .collect()
+    };
+    let found = matching(near);
+    if !found.is_empty() {
+        return found;
+    }
+    matching(map_files_in(&map_root, 2))
+}
+
 /// When the TeX databases were last rebuilt for a given pdflatex, so a problem that
 /// persists doesn't trigger a slow rebuild on every compile.
 static DATABASES_REFRESHED: Mutex<Option<HashMap<PathBuf, Instant>>> = Mutex::new(None);
@@ -927,7 +1020,12 @@ pub fn compile(
         return Ok(failed(LUALATEX_MESSAGE.to_string()));
     }
 
-    fs::write(&tex_file, content).map_err(|e| format!("Failed to write tex file: {}", e))?;
+    // pdfTeX also gets any map files found for fonts the installation never enabled.
+    let write_source = |engine: Engine| -> Result<(), String> {
+        let source = if engine == Engine::PdfLatex { with_map_files(content, &known_map_files(bin)) } else { content.to_string() };
+        fs::write(&tex_file, source).map_err(|e| format!("Failed to write tex file: {}", e))
+    };
+    write_source(engine)?;
     let started = SystemTime::now();
 
     // MiKTeX explains installer problems on stderr, which is otherwise discarded.
@@ -978,6 +1076,7 @@ pub fn compile(
         if engine == Engine::PdfLatex && needs_unicode_engine(&pass.stdout) {
             engine = Engine::XeLatex;
             remove_aux_files(temp_dir, id);
+            write_source(engine)?;
             pass = run_pass(engine)?;
             continue;
         }
@@ -1017,6 +1116,18 @@ pub fn compile(
                 remember_install_failure(bin, &file, &failure);
                 install_error = Some(failure);
                 break;
+            }
+        }
+    }
+
+    // A font whose map file is installed but was never switched on: find the map next
+    // to the font's metrics and hand it to pdfTeX directly. Quick, so it goes first.
+    if !pass.success && engine == Engine::PdfLatex {
+        if let Some(font) = missing_font(&pass.stdout) {
+            let maps = find_font_metrics(bin, &font, &tool_log).map(|tfm| map_files_for_font(&tfm, &font)).unwrap_or_default();
+            if remember_map_files(bin, &maps) {
+                write_source(engine)?;
+                pass = run_pass(engine)?;
             }
         }
     }
@@ -1846,6 +1957,87 @@ ns3-Regular-tlf-ts1--base at 600 not found\r
         let bin = LatexBinary { path: pdflatex, is_miktex: true };
         let err = compile(&bin, &dir, "hang", "x", Duration::from_secs(1)).unwrap_err();
         assert!(err.contains("timed out"), "{}", err);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- Unregistered font maps ------------------------------------------------
+
+    /// A TDS tree like the one MiKTeX or TeX Live installs, with the font's map under a
+    /// name that doesn't match the package or the font (as sourcesans does).
+    fn font_tree(dir: &Path) -> PathBuf {
+        let tfm = dir.join("tree/fonts/tfm/adobe/demosans/Demo-Regular-tlf-ts1--base.tfm");
+        fs::create_dir_all(tfm.parent().unwrap()).unwrap();
+        fs::write(&tfm, "tfm").unwrap();
+        let maps = dir.join("tree/fonts/map/dvips/demosans");
+        fs::create_dir_all(&maps).unwrap();
+        fs::write(maps.join("DemoSansThree.map"), "% comment Demo-Regular-tlf-ts1--base\nDemo-Regular-tlf-ts1--base Demo-Regular \"Enc ReEncodeFont\" <demo.enc <Demo-Regular.pfb\n").unwrap();
+        fs::write(maps.join("Other.map"), "Demo-Regular-tlf-ts1--basement X <x.pfb\n").unwrap();
+        tfm
+    }
+
+    #[test]
+    fn test_map_files_for_font_finds_the_map_by_content_not_name() {
+        let dir = std::env::temp_dir().join(format!("vitae-maps-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let tfm = font_tree(&dir);
+        assert_eq!(map_files_for_font(&tfm, "Demo-Regular-tlf-ts1--base"), vec!["DemoSansThree.map"]);
+        assert!(map_files_for_font(&tfm, "Unknown-Font").is_empty());
+        assert!(map_files_for_font(Path::new("/no/tree/here.tfm"), "x").is_empty());
+
+        // The map lives under a differently named folder: the whole map tree is searched.
+        let moved = dir.join("tree/fonts/map/dvips/elsewhere");
+        fs::create_dir_all(&moved).unwrap();
+        fs::rename(dir.join("tree/fonts/map/dvips/demosans/DemoSansThree.map"), moved.join("DemoSansThree.map")).unwrap();
+        assert_eq!(map_files_for_font(&tfm, "Demo-Regular-tlf-ts1--base"), vec!["DemoSansThree.map"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_with_map_files_keeps_line_numbers() {
+        let content = "\\documentclass{article}\n\\begin{document}\nx\n\\end{document}\n";
+        let maps: BTreeSet<String> = ["B.map".to_string(), "A.map".to_string()].into_iter().collect();
+        let out = with_map_files(content, &maps);
+        assert!(out.starts_with("\\pdfmapfile{+A.map}\\pdfmapfile{+B.map}\\documentclass"));
+        assert_eq!(out.lines().count(), content.lines().count());
+        assert_eq!(with_map_files(content, &BTreeSet::new()), content);
+    }
+
+    /// The real case: MiKTeX installed sourcesans but never enabled SourceSansThree.map.
+    #[cfg(unix)]
+    #[test]
+    fn test_compile_loads_a_map_file_the_installation_never_enabled() {
+        let dir = scratch("unregistered-map");
+        let tfm = font_tree(&dir);
+        let calls = dir.join("pdflatex-calls");
+        let pdflatex = script(&dir, "pdflatex", &format!(
+            "echo call >> '{c}'\nfor last; do :; done\nif grep -q 'pdfmapfile{{+DemoSansThree.map}}' \"$last\"; then echo pdf > \"${{last%.tex}}.pdf\"; exit 0; fi\necho '!pdfTeX error: pdflatex (file Demo-Regular-tlf-ts1--base): Font Demo-Regular-tlf-ts1--base at 600 not found'\necho ' ==> Fatal error occurred, no output PDF file produced!'\nexit 1",
+            c = calls.display()
+        ));
+        script(&dir, "kpsewhich", &format!("[ \"$1\" = 'Demo-Regular-tlf-ts1--base.tfm' ] && echo '{}' && exit 0\nexit 1", tfm.display()));
+        let bin = LatexBinary { path: pdflatex, is_miktex: true };
+
+        let result = compile(&bin, &dir, "maps", "\\documentclass{article}\n\\usepackage{demosans}", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
+        assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2, "failed once, then built with the map");
+
+        // The next compile uses the map from the start.
+        let again = compile(&bin, &dir, "maps", "\\documentclass{article}\n\\usepackage{demosans}\n% edited", Duration::from_secs(10)).unwrap();
+        assert!(again.success);
+        assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 3);
+        // The user's own source isn't changed: only the file handed to pdfTeX is.
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_map_files_are_not_given_to_xelatex() {
+        let dir = scratch("maps-xelatex");
+        let bin = LatexBinary { path: dir.join("pdflatex"), is_miktex: false };
+        remember_map_files(&bin, &["Some.map".to_string()]);
+        script(&dir, "pdflatex", "exit 1");
+        script(&dir, "xelatex", &format!("for last; do :; done\ngrep -q pdfmapfile \"$last\" && exit 1\n{}", WRITE_PDF));
+        let result = compile(&bin, &dir, "xe", "% !TEX program = xelatex\n\\documentclass{article}", Duration::from_secs(10)).unwrap();
+        assert!(result.success, "{:?}", result.errors);
         let _ = fs::remove_dir_all(&dir);
     }
 
