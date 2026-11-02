@@ -18,7 +18,6 @@ import {
   CompilationResult,
   Template,
   ResumeData,
-  ResumePersonalInfo,
 } from "./types";
 import { BUILTIN_TEMPLATES } from "./utils/templatePresets";
 import {
@@ -27,6 +26,7 @@ import {
   renderTemplate,
   extractFieldsFromTemplate,
 } from "./utils/templateEngine";
+import { ImportedData, mergeImportedData } from "./utils/latexImport";
 import { getStoredChannel } from "./utils/updates";
 import { isModalOpen } from "./hooks/useDialog";
 import {
@@ -366,13 +366,10 @@ function App() {
   };
 
   /**
-   * Applies a template (optionally one just imported, with contact details
-   * detected in it). Detected details only fill fields the user left empty.
+   * Applies a template (optionally one just imported, with the content found
+   * in it). Imported content only fills fields and sections that are empty.
    */
-  const handleSelectTemplate = (
-    template: Template,
-    importedPersonal?: Partial<ResumePersonalInfo>
-  ) => {
+  const handleSelectTemplate = (template: Template, imported?: ImportedData) => {
     if (!currentDocument) return;
     if (
       isSourceDetached &&
@@ -384,16 +381,7 @@ function App() {
     }
 
     let data: ResumeData = { ...resumeData, sourceEditedManually: undefined };
-    if (importedPersonal) {
-      const personal = { ...data.personal };
-      for (const [key, value] of Object.entries(importedPersonal)) {
-        const field = key as keyof ResumePersonalInfo;
-        if (typeof value === "string" && value && !personal[field]) {
-          personal[field] = value;
-        }
-      }
-      data = { ...data, personal };
-    }
+    if (imported) data = mergeImportedData(data, imported);
 
     // A freshly imported template isn't in `templates` until the reload finishes.
     setTemplates((prev) => (prev.some((t) => t.id === template.id) ? prev : [...prev, template]));
@@ -972,7 +960,7 @@ function App() {
                   <ResumeForm
                     data={resumeData}
                     onChange={handleResumeDataChange}
-                    customFields={extractedAnalysis.customVariables}
+                    schema={extractedAnalysis}
                     locked={isSourceDetached}
                     onRegenerateFromForm={handleRegenerateFromForm}
                     onOpenSource={() => setEditorMode("code")}

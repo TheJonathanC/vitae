@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import ResumeForm from "../ResumeForm";
 import { getDefaultResumeData } from "../../utils/templateEngine";
+import { analyzeTemplate } from "../../utils/templateParser";
 import { ResumeData } from "../../types";
 
 describe("ResumeForm component", () => {
@@ -328,5 +329,75 @@ describe("ResumeForm component", () => {
         ]),
       })
     );
+  });
+
+  describe("with a template's schema", () => {
+    const template = `
+      {{name}} {{email}}
+      {{#experience}}\\section{Work}{{#items}}{{role}} {{company}} {{startDate}}{{#team}} ({{team}}){{/team}}
+      {{#highlights}}{{#bullets}}{{bullet}}{{/bullets}}{{/highlights}}{{/items}}{{/experience}}
+      {{#publications}}\\section{Publications}{{#items}}{{title}}, {{venue}}{{/items}}{{/publications}}
+      {{#interests}}\\section{Interests}{{interests}}{{/interests}}
+    `;
+    const schema = analyzeTemplate(template);
+
+    it("shows only the sections and fields the template prints", () => {
+      render(<ResumeForm data={initialData} onChange={vi.fn()} schema={schema} />);
+      const tabs = screen.getAllByRole("button").filter((b) => b.dataset.testid?.startsWith("section-tab-"));
+      expect(tabs.map((t) => t.dataset.testid)).toEqual([
+        "section-tab-personal",
+        "section-tab-fields",
+        "section-tab-experience",
+        "section-tab-publications",
+      ]);
+      expect(screen.getByLabelText("Full name")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Phone")).not.toBeInTheDocument();
+      expect(screen.queryAllByLabelText("Location")).toHaveLength(0);
+      expect(screen.getAllByLabelText("Role")).toHaveLength(2);
+      expect(screen.getByRole("heading", { level: 2, name: "Publications" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Interests")).toBeInTheDocument();
+    });
+
+    it("says which of your content the template doesn't print", () => {
+      render(<ResumeForm data={initialData} onChange={vi.fn()} schema={schema} />);
+      const note = screen.getByTestId("hidden-content-note");
+      expect(note).toHaveTextContent("Phone");
+      expect(note).toHaveTextContent("Projects (1)");
+      expect(note).toHaveTextContent("Skills (2)");
+    });
+
+    it("edits template-specific entry fields", () => {
+      const onChange = vi.fn();
+      render(<ResumeForm data={initialData} onChange={onChange} schema={schema} />);
+      fireEvent.change(screen.getAllByLabelText("Team")[0], { target: { value: "Platform" } });
+      expect(onChange.mock.calls[0][0].experience[0].fields).toEqual({ team: "Platform" });
+    });
+
+    it("adds and edits entries of a section the template defines", () => {
+      const onChange = vi.fn();
+      const { rerender } = render(<ResumeForm data={initialData} onChange={onChange} schema={schema} />);
+      fireEvent.click(screen.getByTestId("btn-add-list-publications"));
+      const added = onChange.mock.calls[0][0];
+      expect(added.customLists.publications).toEqual([expect.objectContaining({ fields: {}, bullets: [] })]);
+
+      rerender(<ResumeForm data={added} onChange={onChange} schema={schema} />);
+      fireEvent.change(screen.getByLabelText("Venue"), { target: { value: "ICSE" } });
+      expect(onChange.mock.calls[1][0].customLists.publications[0].fields).toEqual({ venue: "ICSE" });
+      expect(screen.getByTestId("section-tab-publications")).toHaveTextContent("Publications, 1");
+    });
+
+    it("moves template-defined sections and keeps the place of hidden ones", () => {
+      const onChange = vi.fn();
+      const data = { ...initialData, sectionOrder: ["personal", "skills", "experience", "publications"] };
+      render(<ResumeForm data={data} onChange={onChange} schema={schema} />);
+      fireEvent.click(screen.getByTestId("btn-move-section-up-publications"));
+      expect(onChange.mock.calls[0][0].sectionOrder).toEqual(["personal", "publications", "experience", "skills"]);
+    });
+
+    it("explains a template that prints none of your details", () => {
+      render(<ResumeForm data={initialData} onChange={vi.fn()} schema={analyzeTemplate("Fixed text only")} />);
+      expect(screen.getByTestId("no-personal-fields")).toBeInTheDocument();
+      expect(screen.queryByTestId("section-card-experience")).not.toBeInTheDocument();
+    });
   });
 });

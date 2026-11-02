@@ -1,19 +1,32 @@
 import React, { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { Template, ResumePersonalInfo } from "../types";
+import { Template } from "../types";
 import { useDialog } from "../hooks/useDialog";
-import { convertRawLatexToTemplate, extractFieldsFromTemplate } from "../utils/templateEngine";
+import { extractFieldsFromTemplate } from "../utils/templateEngine";
+import {
+  ImportPlan,
+  ImportResult,
+  ImportSection,
+  ImportedData,
+  SectionMapping,
+  analyzeLatexImport,
+  buildLatexImport,
+  changeSectionMapping,
+  changeSlotField,
+  fieldOptions,
+  mappingOptions,
+} from "../utils/latexImport";
 import { IconUpload, IconTrash, IconX, IconCheck, IconChevronLeft } from "./Icons";
 
 interface TemplateManagerProps {
   templates: Template[];
   currentTemplateId: string | null;
   /**
-   * Applies a template. For a just-imported template, `importedPersonal` holds
-   * contact details detected in the file (applied in the same update, so the
-   * template switch and the data merge can't race each other).
+   * Applies a template. For a just-imported template, `imported` holds the
+   * content found in the file (applied in the same update, so the template
+   * switch and the data merge can't race each other).
    */
-  onSelectTemplate: (template: Template, importedPersonal?: Partial<ResumePersonalInfo>) => void;
+  onSelectTemplate: (template: Template, imported?: ImportedData) => void;
   onTemplatesUpdated: () => void;
   onClose: () => void;
 }
@@ -28,11 +41,102 @@ const SECTION_LABELS: Record<string, string> = {
 
 const DETECTED_LABELS: Record<string, string> = {
   name: "Name",
+  title: "Headline",
   email: "Email",
   phone: "Phone",
+  location: "Location",
+  website: "Website",
   github: "GitHub",
   linkedin: "LinkedIn",
 };
+
+const ENTRY_MAPPINGS: SectionMapping[] = ["experience", "education", "projects", "skills", "list"];
+
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** One detected section: what it becomes, and which field each repeating piece fills. */
+function ImportSectionCard({
+  plan,
+  section,
+  onMapping,
+  onField,
+}: {
+  plan: ImportPlan;
+  section: ImportSection;
+  onMapping: (mapping: SectionMapping) => void;
+  onField: (slotId: string, field: string) => void;
+}) {
+  const selectId = `import-section-${section.id}`;
+  const showSlots = ENTRY_MAPPINGS.includes(section.mapping) && section.slots.length > 0;
+  const facts =
+    section.shape === "entries"
+      ? [
+          plural(section.entryCount, "entry", "entries"),
+          section.bulletCount > 0 ? plural(section.bulletCount, "bullet", "bullets") : "",
+        ]
+      : section.shape === "paragraph"
+        ? ["Text"]
+        : ["Empty"];
+  return (
+    <li className="import-section" data-testid={`import-section-${section.id}`}>
+      <div className="import-section-head">
+        <div>
+          <h4>{section.heading}</h4>
+          <p className="muted">{facts.filter(Boolean).join(" · ")}</p>
+        </div>
+        <div className="field import-section-mapping">
+          <label htmlFor={selectId}>Use as</label>
+          <select id={selectId} value={section.mapping} onChange={(e) => onMapping(e.target.value as SectionMapping)}>
+            {mappingOptions(plan, section).map((opt) => (
+              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {showSlots && (
+        <table className="import-slots">
+          <thead>
+            <tr>
+              <th scope="col">Text in the file</th>
+              <th scope="col">Form field</th>
+            </tr>
+          </thead>
+          <tbody>
+            {section.slots.map((slot) => {
+              const sample = slot.samples.find(Boolean) || "";
+              const id = `${selectId}-${slot.id}`;
+              return (
+                <tr key={slot.id}>
+                  <td>
+                    <label htmlFor={id} className="import-sample" title={sample}>
+                      {sample}
+                    </label>
+                  </td>
+                  <td>
+                    <select id={id} value={slot.field} onChange={(e) => onField(slot.id, e.target.value)}>
+                      {fieldOptions(section.mapping, slot.field).map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {section.shape === "paragraph" && section.mapping !== "keep" && (
+        <p className="import-preview">{section.preview}</p>
+      )}
+    </li>
+  );
+}
 
 function describeSections(content: string): string {
   const analysis = extractFieldsFromTemplate(content);
@@ -60,7 +164,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [importName, setImportName] = useState("");
   const [importContent, setImportContent] = useState("");
   const [importFileName, setImportFileName] = useState("");
-  const [importExtractedData, setImportExtractedData] = useState<Partial<ResumePersonalInfo> | null>(null);
+  const [importRaw, setImportRaw] = useState("");
+  const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -92,9 +198,12 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
         return;
       }
 
-      const { templateContent, extractedData } = convertRawLatexToTemplate(text);
-      setImportContent(templateContent);
-      setImportExtractedData(extractedData.personal ?? null);
+      const plan = analyzeLatexImport(text);
+      const result = buildLatexImport(text, plan);
+      setImportRaw(text);
+      setImportPlan(plan);
+      setImportResult(result);
+      setImportContent(result.templateContent);
     };
     reader.onerror = () => {
       setImportError("The file couldn't be read. Try choosing it again.");
@@ -102,6 +211,14 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
     reader.readAsText(file);
     // Allow choosing the same file again later
     e.target.value = "";
+  };
+
+  /** Rebuilds the template after a section or field choice changes. */
+  const updatePlan = (plan: ImportPlan) => {
+    const result = buildLatexImport(importRaw, plan);
+    setImportPlan(plan);
+    setImportResult(result);
+    setImportContent(result.templateContent);
   };
 
   const handleSaveImportedTemplate = async () => {
@@ -125,7 +242,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
       });
 
       onTemplatesUpdated();
-      onSelectTemplate(newTemplate, importExtractedData ?? undefined);
+      onSelectTemplate(newTemplate, importResult?.extractedData);
       onClose();
     } catch (err) {
       setImportError(`The template couldn't be saved: ${err}`);
@@ -145,9 +262,8 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   };
 
-  const detected = importExtractedData
-    ? Object.entries(importExtractedData).filter(([, value]) => value)
-    : [];
+  const detected = Object.entries(importPlan?.personal || {}).filter(([, value]) => value);
+  const match = importResult?.match ?? null;
 
   return (
     <div className="dialog-backdrop" data-testid="template-manager-modal" onClick={onClose}>
@@ -271,14 +387,14 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
           <>
             <div className="dialog-body">
               <p className="dialog-lead">
-                Vitae finds your name and contact details (email, phone, GitHub, LinkedIn) and links
-                them to the form. Everything else keeps the layout you wrote. Files that already use{" "}
+                Vitae finds your contact details and each section of the file, and links the text in them to the
+                form. Check what each section and field became. Files that already use{" "}
                 <code>{"{{placeholders}}"}</code> are imported as they are.
               </p>
 
               {!importContent && !importError && <p className="muted">Reading {importFileName}…</p>}
 
-              {importContent && (
+              {importContent && importPlan && (
                 <div className="import-fields">
                   <div className="field">
                     <label htmlFor="import-template-name">Template name</label>
@@ -290,10 +406,10 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                     />
                   </div>
 
-                  <div className="detected">
-                    <h3>Linked to the form</h3>
-                    {detected.length > 0 ? (
-                      <>
+                  {!importPlan.parameterized && (
+                    <div className="detected">
+                      <h3>Contact details</h3>
+                      {detected.length > 0 ? (
                         <dl>
                           {detected.map(([key, value]) => (
                             <div key={key}>
@@ -302,14 +418,47 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                             </div>
                           ))}
                         </dl>
-                        <p className="muted">These fill in any of your details that are still empty.</p>
-                      </>
-                    ) : (
-                      <p className="muted">
-                        No contact details were found, so this template will use the file's text as written.
-                      </p>
-                    )}
-                  </div>
+                      ) : (
+                        <p className="muted">No contact details were found; the header keeps the file's text.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {!importPlan.parameterized && (
+                    <div className="detected">
+                      <h3>Sections</h3>
+                      {importPlan.sections.length > 0 ? (
+                        <ul className="import-sections">
+                          {importPlan.sections.map((section) => (
+                            <ImportSectionCard
+                              key={section.id}
+                              plan={importPlan}
+                              section={section}
+                              onMapping={(mapping) => updatePlan(changeSectionMapping(importPlan, section.id, mapping))}
+                              onField={(slotId, field) => updatePlan(changeSlotField(importPlan, section.id, slotId, field))}
+                            />
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="muted">
+                          No sections were found (Vitae looks for <code>\section</code>-style headings), so the body
+                          keeps the file's text.
+                        </p>
+                      )}
+                      {(detected.length > 0 || importPlan.sections.some((s) => s.mapping !== "keep")) && (
+                        <p className="muted">What's found fills any of your details and sections that are still empty.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {match !== null && (
+                    <p className={match < 0.9 ? "import-match warn" : "import-match"} data-testid="import-match">
+                      {match >= 0.995
+                        ? "With what was found, the new template prints all of the file's text."
+                        : `With what was found, the new template prints ${Math.round(match * 100)}% of the file's text.`}
+                      {match < 0.9 && " Some entries are laid out differently from the first one; check the preview after saving."}
+                    </p>
+                  )}
 
                   <div className="field">
                     <label htmlFor="import-template-source">LaTeX source</label>
@@ -321,6 +470,9 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                       onChange={(e) => setImportContent(e.target.value)}
                       spellCheck={false}
                     />
+                    {!importPlan.parameterized && (
+                      <p className="field-hint">Changing a section or field above rebuilds this source.</p>
+                    )}
                   </div>
                 </div>
               )}
