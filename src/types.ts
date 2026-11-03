@@ -57,6 +57,8 @@ export interface ResumeExperienceItem {
   startDate?: string;
   endDate?: string;
   bullets: string[];
+  /** Template-specific fields this entry fills, beyond the standard ones. */
+  fields?: Record<string, string>;
 }
 
 export interface ResumeEducationItem {
@@ -67,6 +69,8 @@ export interface ResumeEducationItem {
   startDate?: string;
   endDate?: string;
   details?: string;
+  /** Template-specific fields this entry fills, beyond the standard ones. */
+  fields?: Record<string, string>;
 }
 
 export interface ResumeProjectItem {
@@ -75,12 +79,16 @@ export interface ResumeProjectItem {
   technologies?: string;
   link?: string;
   bullets: string[];
+  /** Template-specific fields this entry fills, beyond the standard ones. */
+  fields?: Record<string, string>;
 }
 
 export interface ResumeSkillItem {
   id: string;
   category: string;
   skills: string;
+  /** Template-specific fields this entry fills, beyond the standard ones. */
+  fields?: Record<string, string>;
 }
 
 export interface ResumeCustomSection {
@@ -88,6 +96,15 @@ export interface ResumeCustomSection {
   title: string;
   content?: string;
   bullets?: string[];
+  /** Template-specific fields this entry fills, beyond the standard ones. */
+  fields?: Record<string, string>;
+}
+
+/** An entry of a section the template defines itself (e.g. Publications). */
+export interface ResumeListItem {
+  id: string;
+  fields: Record<string, string>;
+  bullets: string[];
 }
 
 export interface ResumeData {
@@ -98,6 +115,8 @@ export interface ResumeData {
   skills: ResumeSkillItem[];
   customSections?: ResumeCustomSection[];
   customVariables?: Record<string, string>;
+  /** Entries of template-defined sections, keyed by the section's placeholder name. */
+  customLists?: Record<string, ResumeListItem[]>;
   sectionOrder?: string[];
   /**
    * Set when the LaTeX source was edited by hand. The form then stops
@@ -113,10 +132,31 @@ export interface ExtractedTemplateField {
   section?: string;
 }
 
+export type BuiltinListKey = "experience" | "education" | "projects" | "skills" | "customSections";
+
+/** A repeating section a template renders, and what each of its entries uses. */
+export interface TemplateSectionSchema {
+  /** Data key: a built-in list or a key of `customLists`. */
+  key: string;
+  builtin: boolean;
+  /** Heading the template prints for the section, when it is fixed text. */
+  heading?: string;
+  /** Entry-level placeholders, in the order they first appear. */
+  fields: string[];
+  hasBullets: boolean;
+}
+
 export interface ExtractedTemplateAnalysis {
+  /** True when the template renders at least one repeating section. */
   hasStandardStructure: boolean;
+  /** Built-in sections the template renders, in template order. */
   detectedSections: string[];
+  /** Top-level placeholders that aren't standard contact details. */
   customVariables: ExtractedTemplateField[];
+  /** Standard contact fields (name, email, ...) the template uses. */
+  personalFields: string[];
+  /** Every repeating section, built-in or template-defined, in template order. */
+  sections: TemplateSectionSchema[];
 }
 
 export interface TexInstallCommand {

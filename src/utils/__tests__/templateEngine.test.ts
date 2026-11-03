@@ -4,13 +4,13 @@ import {
   getDefaultResumeData,
   renderTemplate,
   extractFieldsFromTemplate,
-  convertRawLatexToTemplate,
   sanitizeLatexUrl,
   escapeLatexUrl,
   reorderTemplateSections,
   getEmptyResumeData,
   normalizeResumeData,
 } from "../templateEngine";
+import { convertRawLatexToTemplate } from "../latexImport";
 import { BUILTIN_TEMPLATES } from "../templatePresets";
 import { ResumeData } from "../../types";
 

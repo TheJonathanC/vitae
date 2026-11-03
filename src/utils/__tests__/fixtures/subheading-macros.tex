@@ -1,0 +1,107 @@
+\documentclass[letterpaper,11pt]{article}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+\titleformat{\section}{\vspace{-4pt}\scshape\raggedright\large}{}{0em}{}[\titlerule \vspace{-5pt}]
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Huge \scshape Priya Raman} \\ \vspace{1pt}
+    \small 415-555-0182 $|$ \href{mailto:priya.raman@example.com}{\underline{priya.raman@example.com}} $|$
+    \href{https://linkedin.com/in/priyaraman}{\underline{linkedin.com/in/priyaraman}} $|$
+    \href{https://github.com/praman}{\underline{github.com/praman}}
+\end{center}
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Northfield University}{Portland, OR}
+      {Bachelor of Science in Computer Science, Minor in Mathematics}{Aug. 2017 -- May 2021}
+    \resumeSubheading
+      {Cascade Community College}{Salem, OR}
+      {Associate's in Liberal Arts}{Aug. 2015 -- May 2017}
+  \resumeSubHeadingListEnd
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Software Engineer}{June 2021 -- Present}
+      {Harbor Analytics Inc.}{Seattle, WA}
+      \resumeItemListStart
+        \resumeItem{Built a streaming ingestion service in Go handling 40k events per second}
+        \resumeItem{Cut dashboard load time by 35\% by caching \textbf{aggregate queries}}
+        \resumeItem{Mentored two interns through their first production launches}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Research Assistant}{Sep. 2019 -- May 2021}
+      {Northfield University}{Portland, OR}
+      \resumeItemListStart
+        \resumeItem{Wrote simulation tooling in Python for a traffic-flow study}
+        \resumeItem{Co-authored a workshop paper on adaptive signal timing}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Tidepool} $|$ \emph{Rust, WebAssembly, React}}{Jan. 2022 -- Present}
+          \resumeItemListStart
+            \resumeItem{A browser-based tide chart viewer with offline support}
+            \resumeItem{Renders 10 years of station data in under a second}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Ledgerly} $|$ \emph{TypeScript, Node.js, PostgreSQL}}{Mar. 2020 -- Dec. 2020}
+          \resumeItemListStart
+            \resumeItem{Shared expense tracker used by 300 households}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: Go, Rust, Python, TypeScript, SQL} \\
+     \textbf{Frameworks}{: React, gRPC, Django} \\
+     \textbf{Tools}{: Docker, Kubernetes, Terraform, Git}
+    }}
+ \end{itemize}
+
+\end{document}

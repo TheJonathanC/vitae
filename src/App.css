@@ -819,6 +819,13 @@ h3 .tag {
   color: var(--ink-3);
 }
 
+/* Content the active template doesn't print */
+.hidden-note {
+  margin: 8px 0 24px;
+  font-size: var(--text-sm);
+  color: var(--ink-3);
+}
+
 /* Entries: a margin rule marks the one being edited */
 .entry {
   position: relative;
@@ -1446,6 +1453,105 @@ h3 .tag {
 
 .detected dd {
   overflow-wrap: anywhere;
+}
+
+.detected + .detected {
+  margin-top: 12px;
+}
+
+/* Import review: each detected section and its fields */
+.import-sections {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.import-section {
+  padding: 10px 12px;
+  background-color: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.import-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.import-section-head h4 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.import-section-head .muted {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+}
+
+.import-section-mapping {
+  min-width: 180px;
+  margin: 0;
+}
+
+.import-slots {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  table-layout: fixed;
+}
+
+.import-slots th {
+  padding: 0 0 4px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+  text-align: left;
+}
+
+.import-slots td {
+  padding: 3px 0;
+  vertical-align: middle;
+}
+
+.import-slots td:first-child {
+  padding-right: 12px;
+}
+
+.import-slots select {
+  width: 100%;
+}
+
+.import-sample {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.import-preview {
+  margin: 8px 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.import-match {
+  margin: 12px 0;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.import-match.warn {
+  padding: 8px 10px;
+  color: var(--warning);
+  background-color: var(--warning-soft);
+  border-radius: var(--radius);
 }
 
 .code-textarea,
