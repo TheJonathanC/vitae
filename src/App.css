@@ -1524,7 +1524,9 @@ h3 .tag {
 }
 
 .import-slots select {
-  width: 100%;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: var(--text-sm);
 }
 
 .import-sample {
