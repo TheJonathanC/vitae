@@ -283,3 +283,14 @@ describe("mergeImportedData", () => {
     expect(merged.customVariables).toEqual({ interests: "Mine", clearance: "Yes" });
   });
 });
+
+describe("Windows line endings", () => {
+  it("imports a CRLF file the same as an LF one", () => {
+    const lf = fixture("subheading-macros");
+    const crlf = lf.replace(/\r?\n/g, "\r\n");
+    const fromCrlf = buildLatexImport(crlf);
+    expect(fromCrlf.templateContent).toBe(buildLatexImport(lf.replace(/\r\n/g, "\n")).templateContent);
+    expect(fromCrlf.templateContent).not.toContain("\r");
+    expect(fromCrlf.match).toBe(1);
+  });
+});

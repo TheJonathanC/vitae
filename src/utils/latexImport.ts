@@ -903,8 +903,12 @@ function prototype(section: ScannedSection): Entry {
   return section.entries.reduce((best, e) => (e.leaves.length > best.leaves.length ? e : best), section.entries[0]);
 }
 
+/** Files saved on Windows use CRLF; the importer writes LF, so read everything as LF. */
+const normalizeLineEndings = (text: string) => text.replace(/\r\n?/g, "\n");
+
 /** Reads the file and guesses what each section and field is. */
-export function analyzeLatexImport(raw: string): ImportPlan {
+export function analyzeLatexImport(input: string): ImportPlan {
+  const raw = normalizeLineEndings(input);
   if (isParameterized(raw)) return { parameterized: true, personal: {}, sections: [] };
   const doc = scanDocument(raw);
   const preamble = parameterizePreamble(doc.src.slice(0, doc.header.start));
@@ -1160,7 +1164,8 @@ function matchScore(original: string, rendered: string): number {
 }
 
 /** Builds the template and data from a plan (the analyzer's guesses when none is given). */
-export function buildLatexImport(raw: string, plan: ImportPlan = analyzeLatexImport(raw)): ImportResult {
+export function buildLatexImport(input: string, plan: ImportPlan = analyzeLatexImport(input)): ImportResult {
+  const raw = normalizeLineEndings(input);
   if (plan.parameterized) return { templateContent: raw, extractedData: {}, match: null };
   const doc = scanDocument(raw);
   const { src } = doc;
