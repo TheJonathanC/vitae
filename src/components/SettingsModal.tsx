@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { relaunch } from "@tauri-apps/api/process";
 import { open } from "@tauri-apps/api/shell";
@@ -7,9 +7,17 @@ import packageInfo from "../../package.json";
 import { UpdateCheckResponse } from "../types";
 import { checkGithubReleases, RELEASES_PAGE_URL } from "../utils/updates";
 import { useDialog } from "../hooks/useDialog";
-import { IconX } from "./Icons";
+import { IconX, IconDownload, IconSparkles, IconTerminal } from "./Icons";
 import PackageManager from "./PackageManager";
 import AiSettings from "./AiSettings";
+
+type SectionId = "updates" | "ai" | "latex";
+
+const SECTIONS: { id: SectionId; label: string; Icon: typeof IconX }[] = [
+  { id: "updates", label: "Updates", Icon: IconDownload },
+  { id: "ai", label: "AI assistant", Icon: IconSparkles },
+  { id: "latex", label: "LaTeX", Icon: IconTerminal },
+];
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -28,6 +36,8 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
   const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResponse | null>(null);
   const [installing, setInstalling] = useState(false);
   const [showPackages, setShowPackages] = useState(false);
+  const [activeSection, setActiveSection] = useState<SectionId>("updates");
+  const navClickedAt = useRef(0);
   const dialogRef = useDialog<HTMLDivElement>(onClose);
 
   useEffect(() => {
@@ -137,12 +147,36 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
     }
   };
 
+  const scrollToSection = (id: SectionId) => {
+    setActiveSection(id);
+    // Keep the clicked item highlighted while the smooth scroll runs; a short last
+    // section can't reach the top, so the scroll position alone would pick another.
+    navClickedAt.current = Date.now();
+    document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // Highlights the section the reader has scrolled to.
+  const handleBodyScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (Date.now() - navClickedAt.current < 1000) return;
+    const body = e.currentTarget;
+    if (body.scrollTop + body.clientHeight >= body.scrollHeight - 4) {
+      setActiveSection(SECTIONS[SECTIONS.length - 1].id);
+      return;
+    }
+    let current: SectionId = SECTIONS[0].id;
+    for (const section of SECTIONS) {
+      const el = document.getElementById(`settings-${section.id}`);
+      if (el && el.offsetTop - body.offsetTop <= body.scrollTop + 24) current = section.id;
+    }
+    setActiveSection(current);
+  };
+
   return (
     <>
       <div className="dialog-backdrop" data-testid="settings-modal-overlay" onClick={onClose}>
         <div
           ref={dialogRef}
-          className="dialog"
+          className="dialog dialog-settings"
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-title"
@@ -156,79 +190,112 @@ function SettingsModal({ onClose, currentChannel, onChannelChange }: SettingsMod
             </button>
           </div>
 
-          <div className="dialog-body">
-            <fieldset className="choice-group">
-              <legend>Release channel</legend>
-              <label className={`choice ${channel === "stable" ? "selected" : ""}`}>
-                <input
-                  type="radio"
-                  name="update-channel"
-                  value="stable"
-                  checked={channel === "stable"}
-                  onChange={() => handleChannelSelect("stable")}
-                />
-                <span className="choice-text">
-                  <span className="choice-title">Stable (recommended)</span>
-                  <span className="choice-desc">Tested releases only.</span>
-                </span>
-              </label>
-              <label className={`choice ${channel === "beta" ? "selected" : ""}`}>
-                <input
-                  type="radio"
-                  name="update-channel"
-                  value="beta"
-                  checked={channel === "beta"}
-                  onChange={() => handleChannelSelect("beta")}
-                />
-                <span className="choice-text">
-                  <span className="choice-title">Beta</span>
-                  <span className="choice-desc">New builds as soon as they're made. Expect rough edges.</span>
-                </span>
-              </label>
-            </fieldset>
-
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={autoCheck}
-                onChange={(e) => handleAutoCheckToggle(e.target.checked)}
-              />
-              Check for updates when Vitae starts
-            </label>
-
-            <div className="update-check">
-              <button type="button" className="btn" onClick={checkForUpdates} disabled={checking || installing}>
-                {checking ? "Checking…" : "Check for updates"}
-              </button>
-              {availableUpdate && (
-                <button type="button" className="btn btn-primary" onClick={installUpdate} disabled={installing}>
-                  {installing
-                    ? "Installing…"
-                    : availableUpdate.download_url
-                      ? `Download ${availableUpdate.version}`
-                      : `Install ${availableUpdate.version}`}
+          <div className="settings-layout">
+            <nav className="settings-nav" aria-label="Settings sections">
+              {SECTIONS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={activeSection === id ? "active" : ""}
+                  aria-current={activeSection === id ? "true" : undefined}
+                  onClick={() => scrollToSection(id)}
+                >
+                  <Icon size={16} />
+                  {label}
                 </button>
-              )}
+              ))}
+              <p className="settings-version">Vitae {version}</p>
+            </nav>
+
+            <div className="dialog-body settings-body" onScroll={handleBodyScroll}>
+              <section className="settings-section" id="settings-updates" aria-labelledby="settings-updates-title">
+                <div className="settings-section-head">
+                  <h3 id="settings-updates-title">Updates</h3>
+                  <p className="muted">
+                    You're on Vitae {version}, {channel === "beta" ? "beta" : "stable"} channel.
+                  </p>
+                </div>
+
+                <fieldset className="choice-group">
+                  <legend>Release channel</legend>
+                  <label className={`choice ${channel === "stable" ? "selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name="update-channel"
+                      value="stable"
+                      checked={channel === "stable"}
+                      onChange={() => handleChannelSelect("stable")}
+                    />
+                    <span className="choice-text">
+                      <span className="choice-title">Stable (recommended)</span>
+                      <span className="choice-desc">Tested releases only.</span>
+                    </span>
+                  </label>
+                  <label className={`choice ${channel === "beta" ? "selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name="update-channel"
+                      value="beta"
+                      checked={channel === "beta"}
+                      onChange={() => handleChannelSelect("beta")}
+                    />
+                    <span className="choice-text">
+                      <span className="choice-title">Beta</span>
+                      <span className="choice-desc">New builds as soon as they're made. Expect rough edges.</span>
+                    </span>
+                  </label>
+                </fieldset>
+
+                <label className="settings-row">
+                  <span className="settings-row-text">
+                    <span className="settings-row-title">Check for updates when Vitae starts</span>
+                    <span className="muted">You'll see a note at the top of the window when there's a new version.</span>
+                  </span>
+                  <span className="switch">
+                    <input
+                      type="checkbox"
+                      checked={autoCheck}
+                      onChange={(e) => handleAutoCheckToggle(e.target.checked)}
+                    />
+                    <span className="switch-track" aria-hidden="true" />
+                  </span>
+                </label>
+
+                <div className="update-check">
+                  <button type="button" className="btn" onClick={checkForUpdates} disabled={checking || installing}>
+                    {checking ? "Checking…" : "Check for updates"}
+                  </button>
+                  {availableUpdate && (
+                    <button type="button" className="btn btn-primary" onClick={installUpdate} disabled={installing}>
+                      {installing
+                        ? "Installing…"
+                        : availableUpdate.download_url
+                          ? `Download ${availableUpdate.version}`
+                          : `Install ${availableUpdate.version}`}
+                    </button>
+                  )}
+                  {statusMessage && (
+                    <p className="update-status" role="status">
+                      {statusMessage}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <AiSettings />
+
+              <section className="settings-section" id="settings-latex" aria-labelledby="settings-latex-title">
+                <div className="settings-section-head">
+                  <h3 id="settings-latex-title">LaTeX</h3>
+                  <p className="muted">See how much space LaTeX packages use and remove the ones you don't need.</p>
+                </div>
+                <div>
+                  <button type="button" className="btn" onClick={() => setShowPackages(true)}>
+                    Manage LaTeX packages…
+                  </button>
+                </div>
+              </section>
             </div>
-            {statusMessage && (
-              <p className="update-status" role="status">
-                {statusMessage}
-              </p>
-            )}
-
-            <AiSettings />
-
-            <div className="settings-section">
-              <h3>LaTeX</h3>
-              <p className="muted">See how much space LaTeX packages use and remove the ones you don't need.</p>
-              <button type="button" className="btn" onClick={() => setShowPackages(true)}>
-                Manage LaTeX packages…
-              </button>
-            </div>
-
-            <p className="about-line">
-              Vitae {version}, {channel === "beta" ? "beta" : "stable"} channel
-            </p>
           </div>
 
           <div className="dialog-foot">

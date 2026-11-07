@@ -266,6 +266,18 @@ describe("App Integration Tests", { timeout: 15000 }, () => {
     expect(invoke).toHaveBeenCalledWith("compile_latex", { id: "doc-1", content: mockDocs[0].content });
   });
 
+  it("builds with Ctrl+S and opens settings with Ctrl+,", async () => {
+    manualBuilds();
+    await renderApp();
+
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    expect(await screen.findByRole("img", { name: "Page 1 of 1" })).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("compile_latex", { id: "doc-1", content: mockDocs[0].content });
+
+    fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
   it("ignores a compile result that arrives after switching documents", async () => {
     let finishCompile: (value: unknown) => void = () => {};
     mockBackend((cmd) =>

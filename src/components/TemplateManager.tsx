@@ -16,7 +16,7 @@ import {
   fieldOptions,
   mappingOptions,
 } from "../utils/latexImport";
-import { IconUpload, IconTrash, IconX, IconCheck, IconChevronLeft } from "./Icons";
+import { IconUpload, IconTrash, IconX, IconCheck, IconChevronLeft, IconChevronRight, IconFile } from "./Icons";
 
 interface TemplateManagerProps {
   templates: Template[];
@@ -79,14 +79,15 @@ function ImportSectionCard({
       : section.shape === "paragraph"
         ? ["Text"]
         : ["Empty"];
+  const kept = section.mapping === "keep";
   return (
-    <li className="import-section" data-testid={`import-section-${section.id}`}>
+    <li className={`import-section${kept ? " is-kept" : ""}`} data-testid={`import-section-${section.id}`}>
       <div className="import-section-head">
-        <div>
+        <div className="import-section-title">
           <h4>{section.heading}</h4>
-          <p className="muted">{facts.filter(Boolean).join(" · ")}</p>
+          <p className="muted">{facts.filter(Boolean).join(", ")}</p>
         </div>
-        <div className="field import-section-mapping">
+        <div className="import-section-mapping">
           <label htmlFor={selectId}>Use as</label>
           <select id={selectId} value={section.mapping} onChange={(e) => onMapping(e.target.value as SectionMapping)}>
             {mappingOptions(plan, section).map((opt) => (
@@ -101,8 +102,9 @@ function ImportSectionCard({
         <table className="import-slots">
           <thead>
             <tr>
-              <th scope="col">Text in the file</th>
-              <th scope="col">Form field</th>
+              <th scope="col">In your file</th>
+              <th scope="col" aria-hidden="true" />
+              <th scope="col">Fills the form field</th>
             </tr>
           </thead>
           <tbody>
@@ -110,11 +112,14 @@ function ImportSectionCard({
               const sample = slot.samples.find(Boolean) || "";
               const id = `${selectId}-${slot.id}`;
               return (
-                <tr key={slot.id}>
+                <tr key={slot.id} className={slot.field ? "" : "is-fixed"}>
                   <td>
                     <label htmlFor={id} className="import-sample" title={sample}>
                       {sample}
                     </label>
+                  </td>
+                  <td className="import-arrow" aria-hidden="true">
+                    <IconChevronRight size={14} />
                   </td>
                   <td>
                     <select id={id} value={slot.field} onChange={(e) => onField(slot.id, e.target.value)}>
@@ -131,9 +136,7 @@ function ImportSectionCard({
           </tbody>
         </table>
       )}
-      {section.shape === "paragraph" && section.mapping !== "keep" && (
-        <p className="import-preview">{section.preview}</p>
-      )}
+      {section.shape === "paragraph" && !kept && <p className="import-preview">{section.preview}</p>}
     </li>
   );
 }
@@ -386,16 +389,30 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
         {view.kind === "import" && (
           <>
             <div className="dialog-body">
-              <p className="dialog-lead">
-                Vitae finds your contact details and each section of the file, and links the text in them to the
-                form. Check what each section and field became. Files that already use{" "}
-                <code>{"{{placeholders}}"}</code> are imported as they are.
-              </p>
+              <div className="import-file">
+                <IconFile size={18} />
+                <span className="import-file-name">{importFileName}</span>
+                <button type="button" className="text-button" onClick={() => fileInputRef.current?.click()}>
+                  Choose another file
+                </button>
+              </div>
 
               {!importContent && !importError && <p className="muted">Reading {importFileName}…</p>}
 
               {importContent && importPlan && (
                 <div className="import-fields">
+                  {match !== null && (
+                    <div className={match < 0.9 ? "import-match warn" : "import-match"} data-testid="import-match">
+                      {match < 0.9 ? <span className="import-match-mark">!</span> : <IconCheck size={16} />}
+                      <p>
+                        {match >= 0.995
+                          ? "With what was found, the new template prints all of the file's text."
+                          : `With what was found, the new template prints ${Math.round(match * 100)}% of the file's text.`}
+                        {match < 0.9 && " Some entries are laid out differently from the first one; check the preview after saving."}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="field">
                     <label htmlFor="import-template-name">Template name</label>
                     <input
@@ -406,66 +423,71 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                     />
                   </div>
 
-                  {!importPlan.parameterized && (
-                    <div className="detected">
-                      <h3>Contact details</h3>
-                      {detected.length > 0 ? (
-                        <dl>
-                          {detected.map(([key, value]) => (
-                            <div key={key}>
-                              <dt>{DETECTED_LABELS[key] || key}</dt>
-                              <dd>{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      ) : (
-                        <p className="muted">No contact details were found; the header keeps the file's text.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {!importPlan.parameterized && (
-                    <div className="detected">
-                      <h3>Sections</h3>
-                      {importPlan.sections.length > 0 ? (
-                        <ul className="import-sections">
-                          {importPlan.sections.map((section) => (
-                            <ImportSectionCard
-                              key={section.id}
-                              plan={importPlan}
-                              section={section}
-                              onMapping={(mapping) => updatePlan(changeSectionMapping(importPlan, section.id, mapping))}
-                              onField={(slotId, field) => updatePlan(changeSlotField(importPlan, section.id, slotId, field))}
-                            />
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="muted">
-                          No sections were found (Vitae looks for <code>\section</code>-style headings), so the body
-                          keeps the file's text.
-                        </p>
-                      )}
-                      {(detected.length > 0 || importPlan.sections.some((s) => s.mapping !== "keep")) && (
-                        <p className="muted">What's found fills any of your details and sections that are still empty.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {match !== null && (
-                    <p className={match < 0.9 ? "import-match warn" : "import-match"} data-testid="import-match">
-                      {match >= 0.995
-                        ? "With what was found, the new template prints all of the file's text."
-                        : `With what was found, the new template prints ${Math.round(match * 100)}% of the file's text.`}
-                      {match < 0.9 && " Some entries are laid out differently from the first one; check the preview after saving."}
+                  {importPlan.parameterized ? (
+                    <p className="dialog-lead">
+                      This file already uses <code>{"{{placeholders}}"}</code>, so it's imported as it is.
                     </p>
+                  ) : (
+                    <>
+                      <section className="import-group" aria-labelledby="import-contact-title">
+                        <div className="import-group-head">
+                          <h3 id="import-contact-title">Contact details</h3>
+                          <p className="muted">
+                            {detected.length > 0
+                              ? "These fill your details where they're still empty."
+                              : "None were found, so the header keeps the file's text."}
+                          </p>
+                        </div>
+                        {detected.length > 0 && (
+                          <dl className="import-contact">
+                            {detected.map(([key, value]) => (
+                              <div key={key}>
+                                <dt>{DETECTED_LABELS[key] || key}</dt>
+                                <dd>{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                      </section>
+
+                      <section className="import-group" aria-labelledby="import-sections-title">
+                        <div className="import-group-head">
+                          <h3 id="import-sections-title">Sections</h3>
+                          {importPlan.sections.length > 0 ? (
+                            <p className="muted">
+                              Check what each section becomes and which form field each piece of text fills. Entries
+                              found here are added to sections that are still empty.
+                            </p>
+                          ) : (
+                            <p className="muted">
+                              No sections were found (Vitae looks for <code>\section</code>-style headings), so the
+                              body keeps the file's text.
+                            </p>
+                          )}
+                        </div>
+                        {importPlan.sections.length > 0 && (
+                          <ul className="import-sections">
+                            {importPlan.sections.map((section) => (
+                              <ImportSectionCard
+                                key={section.id}
+                                plan={importPlan}
+                                section={section}
+                                onMapping={(mapping) => updatePlan(changeSectionMapping(importPlan, section.id, mapping))}
+                                onField={(slotId, field) => updatePlan(changeSlotField(importPlan, section.id, slotId, field))}
+                              />
+                            ))}
+                          </ul>
+                        )}
+                      </section>
+                    </>
                   )}
 
-                  <div className="field">
-                    <label htmlFor="import-template-source">LaTeX source</label>
+                  <details className="import-source" open={importPlan.parameterized}>
+                    <summary>LaTeX source</summary>
                     <textarea
-                      id="import-template-source"
+                      aria-label="LaTeX source"
                       className="code-textarea"
-                      rows={8}
+                      rows={12}
                       value={importContent}
                       onChange={(e) => setImportContent(e.target.value)}
                       spellCheck={false}
@@ -473,7 +495,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                     {!importPlan.parameterized && (
                       <p className="field-hint">Changing a section or field above rebuilds this source.</p>
                     )}
-                  </div>
+                  </details>
                 </div>
               )}
 
@@ -484,8 +506,8 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
               )}
             </div>
             <div className="dialog-foot">
-              <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
-                Choose another file
+              <button type="button" className="btn" onClick={() => setView({ kind: "list" })}>
+                Cancel
               </button>
               <button
                 type="button"

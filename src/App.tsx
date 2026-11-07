@@ -681,6 +681,33 @@ function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
+  // Keyboard shortcuts: Ctrl+S saves and rebuilds, Ctrl+E exports, Ctrl+, opens settings.
+  const shortcutsRef = useRef({ save: () => {}, exportPdf: () => {}, settings: () => {} });
+  shortcutsRef.current = {
+    save: () => {
+      flushSave();
+      if (currentDocument && latexInstalled) compileLatex();
+    },
+    exportPdf: () => {
+      exportPDF();
+    },
+    settings: () => setShowSettings(true),
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || isModalOpen()) return;
+      const key = e.key.toLowerCase();
+      const action =
+        key === "s" ? "save" : key === "e" ? "exportPdf" : key === "," ? "settings" : null;
+      if (!action) return;
+      e.preventDefault();
+      shortcutsRef.current[action]();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // Escape closes the build details sheet (dialogs handle their own Escape)
   useEffect(() => {
     if (!showDetails) return;
@@ -913,7 +940,7 @@ function App() {
             className="icon-button"
             onClick={() => setShowSettings(true)}
             aria-label="Settings"
-            title="Settings"
+            title="Settings (Ctrl+,)"
             data-testid="btn-settings"
           >
             <IconSettings size={17} />
@@ -1097,6 +1124,7 @@ function App() {
                   className="btn"
                   onClick={compileLatex}
                   disabled={!currentDocument || isCompiling || !latexInstalled}
+                  title="Build the PDF again (Ctrl+S)"
                   data-testid="btn-update-preview"
                 >
                   {autoCompile ? "Try again" : "Update preview"}
@@ -1117,6 +1145,7 @@ function App() {
                 className="btn btn-primary"
                 onClick={exportPDF}
                 disabled={!hasPreviewForCurrent}
+                title="Save the PDF somewhere on your computer (Ctrl+E)"
               >
                 <IconDownload size={15} />
                 Export PDF

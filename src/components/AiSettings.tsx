@@ -68,11 +68,13 @@ function AiSettings() {
     });
 
   return (
-    <div className="settings-section">
-      <h3>AI assistant (optional)</h3>
-      <p className="muted">
-        Add your own Anthropic, OpenAI or Google Gemini API key and Vitae can suggest better wording for your bullets. You review every change before it's used, and nothing is sent unless you ask.
-      </p>
+    <section className="settings-section" id="settings-ai" aria-labelledby="settings-ai-title">
+      <div className="settings-section-head">
+        <h3 id="settings-ai-title">AI assistant (optional)</h3>
+        <p className="muted">
+          Add your own Anthropic, OpenAI or Google Gemini API key and Vitae can suggest better wording for your bullets. You review every change before it's used, and nothing is sent unless you ask.
+        </p>
+      </div>
 
       {models ? (
         <div className="field">
@@ -98,11 +100,12 @@ function AiSettings() {
           </div>
         </div>
       ) : connected ? (
-        <>
+        <div className="ai-connected">
           <p>
+            <span className="status-dot" aria-hidden="true" />
             Connected to <strong>{settings?.provider_name}</strong>, using <strong>{settings?.model}</strong>.
           </p>
-          <div className="setup-actions">
+          <div className="ai-connected-actions">
             <button type="button" className="btn" onClick={changeModel} disabled={busy}>
               {busy ? "Loading…" : "Change model"}
             </button>
@@ -121,20 +124,23 @@ function AiSettings() {
               </button>
             )}
           </div>
-        </>
+        </div>
       ) : (
         <div className="field">
           <label htmlFor="ai-key">API key</label>
-          <input
-            id="ai-key"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="sk-ant-…, sk-… or AIza…"
-          />
-          <div className="setup-actions">
+          <div className="input-with-button">
+            <input
+              id="ai-key"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder="sk-ant-…, sk-… or AIza…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && keyInput.trim() && !busy) checkKey();
+              }}
+            />
             <button type="button" className="btn btn-primary" onClick={checkKey} disabled={busy || !keyInput.trim()}>
               {busy ? "Checking…" : "Check key"}
             </button>
@@ -156,7 +162,7 @@ function AiSettings() {
       <p className="field-hint">
         Your key is stored on this computer in Vitae's data folder, readable only by your account but not encrypted. When you use AI help, the bullets you choose and the job description are sent to your provider.
       </p>
-    </div>
+    </section>
   );
 }
 

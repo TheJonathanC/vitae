@@ -136,7 +136,7 @@ describe("TemplateManager component", () => {
     });
 
     const experience = await screen.findByTestId("import-section-s0");
-    expect(experience).toHaveTextContent("1 entry · 1 bullet");
+    expect(experience).toHaveTextContent("1 entry, 1 bullet");
     expect(screen.getByLabelText("Use as", { selector: "#import-section-s0" })).toHaveValue("experience");
     expect(screen.getByLabelText("Engineer")).toHaveValue("role");
     expect(screen.getByLabelText("2020 -- 2023")).toHaveValue("dates");

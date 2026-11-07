@@ -167,6 +167,9 @@ input[type="text"],
 input[type="email"],
 input[type="tel"],
 input[type="url"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
 textarea {
   width: 100%;
   min-width: 0;
@@ -195,6 +198,9 @@ input[type="text"]:focus,
 input[type="email"]:focus,
 input[type="tel"]:focus,
 input[type="url"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="number"]:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent);
